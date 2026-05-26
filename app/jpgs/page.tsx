@@ -1,0 +1,270 @@
+"use client";
+
+import { useState, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
+
+type OsCollection = {
+  collection: string;
+  name: string;
+  description?: string;
+  image_url?: string;
+  safelist_request_status?: string;
+  safelist_status?: string;
+  contracts?: Array<{ address: string }>;
+  opensea_url?: string;
+};
+
+const MAX_SELECTED = 6;
+
+export default function JpgsPage() {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<OsCollection[]>([]);
+  const [selected, setSelected] = useState<OsCollection[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [showSelectHint, setShowSelectHint] = useState(false);
+  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const router = useRouter();
+
+  const runSearch = useCallback(async (q: string) => {
+    if (!q.trim()) { setResults([]); setShowSelectHint(false); return; }
+    setSearching(true);
+    try {
+      const res = await fetch(`/api/jpgs/collections/search?q=${encodeURIComponent(q)}`);
+      const data = (await res.json()) as { collections?: OsCollection[] };
+      setResults(data.collections ?? []);
+      setShowSelectHint(false);
+    } finally {
+      setSearching(false);
+    }
+  }, []);
+
+  function handleInput(e: React.ChangeEvent<HTMLInputElement>) {
+    const val = e.target.value;
+    setQuery(val);
+    setShowSelectHint(false);
+    if (debounce.current) clearTimeout(debounce.current);
+    debounce.current = setTimeout(() => runSearch(val), 350);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    // Only select when there is exactly one result (unambiguous intent)
+    if (results.length === 1) {
+      selectCollection(results[0]);
+    } else if (results.length !== 1 && query.trim()) {
+      // Multiple results or no results: prompt the user to pick a row
+      setShowSelectHint(true);
+    }
+  }
+
+  function selectCollection(col: OsCollection) {
+    toggleCollection(col);
+    setQuery("");
+    setResults([]);
+    setShowSelectHint(false);
+  }
+
+  function toggleCollection(col: OsCollection) {
+    setSelected((prev) => {
+      if (prev.some((c) => c.collection === col.collection)) {
+        return prev.filter((c) => c.collection !== col.collection);
+      }
+      if (prev.length >= MAX_SELECTED) return prev;
+      return [...prev, col];
+    });
+  }
+
+  function isSelected(col: OsCollection) {
+    return selected.some((c) => c.collection === col.collection);
+  }
+
+  function discover() {
+    if (selected.length < 2) return;
+    const slugs = selected.map((c) => c.collection).join(",");
+    router.push(`/jpgs/results?slugs=${encodeURIComponent(slugs)}`);
+  }
+
+  const showDropdown = results.length > 0;
+  const verifiedStatus = (col: OsCollection) =>
+    col.safelist_status === "verified" || col.safelist_request_status === "verified";
+
+  return (
+    <main className="min-h-screen" style={{ background: "#0e0e0e", color: "rgb(240,237,230)" }}>
+      {/* Hero */}
+      <section style={{ maxWidth: 640, margin: "0 auto", padding: "96px 24px 48px" }}>
+        <p style={{ fontSize: 11, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgb(149,117,255)", marginBottom: 24 }}>
+          I Like JPGs
+        </p>
+        <h1 style={{ fontSize: 36, fontWeight: 300, lineHeight: 1.2, letterSpacing: "-0.02em", marginBottom: 16 }}>
+          Find people who collect what you collect.
+        </h1>
+        <p style={{ color: "rgb(168,164,157)", fontSize: 16, lineHeight: 1.7, maxWidth: 480 }}>
+          Search for NFT collections, choose a few that matter, and see wallets with the strongest overlap.
+        </p>
+      </section>
+
+      {/* Search */}
+      <section style={{ maxWidth: 640, margin: "0 auto", padding: "0 24px" }}>
+        <div style={{ position: "relative" }}>
+          <input
+            type="text"
+            value={query}
+            onChange={handleInput}
+            onKeyDown={handleKeyDown}
+            placeholder="Search collections…"
+            style={{
+              width: "100%",
+              background: "#1a1a1a",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: 12,
+              padding: "16px 20px",
+              color: "rgb(240,237,230)",
+              fontSize: 14,
+              outline: "none",
+              boxSizing: "border-box",
+            }}
+            onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(149,117,255,0.5)")}
+            onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)")}
+          />
+          {searching && (
+            <div style={{
+              position: "absolute", right: 16, top: "50%", transform: "translateY(-50%)",
+              width: 16, height: 16, border: "1.5px solid rgb(149,117,255)",
+              borderTopColor: "transparent", borderRadius: "50%",
+              animation: "spin 0.7s linear infinite",
+            }} />
+          )}
+        </div>
+
+        {/* "Select from list" hint shown when Enter is pressed with no unambiguous selection */}
+        {showSelectHint && (
+          <p style={{ fontSize: 12, color: "rgb(149,117,255)", marginTop: 8, paddingLeft: 4, opacity: 0.8 }}>
+            Select a collection from the list.
+          </p>
+        )}
+
+        {/* Search results dropdown — only populated from real API result objects */}
+        {showDropdown && (
+          <div style={{
+            marginTop: 4,
+            background: "#161616",
+            border: "1px solid rgba(255,255,255,0.08)",
+            borderRadius: 12,
+            overflow: "hidden",
+          }}>
+            {results.map((col) => (
+              <button
+                key={col.collection}
+                onClick={() => selectCollection(col)}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "12px 16px",
+                  textAlign: "left",
+                  background: isSelected(col) ? "rgba(149,117,255,0.08)" : "transparent",
+                  border: "none",
+                  borderBottom: "1px solid rgba(255,255,255,0.05)",
+                  color: "rgb(240,237,230)",
+                  cursor: selected.length >= MAX_SELECTED && !isSelected(col) ? "not-allowed" : "pointer",
+                  opacity: selected.length >= MAX_SELECTED && !isSelected(col) ? 0.5 : 1,
+                }}
+              >
+                {col.image_url ? (
+                  // eslint-disable-next-line @next/next-image/no-img-element
+                  <img
+                    src={col.image_url}
+                    alt=""
+                    style={{ width: 32, height: 32, borderRadius: 6, objectFit: "cover", flexShrink: 0 }}
+                  />
+                ) : (
+                  <div style={{ width: 32, height: 32, borderRadius: 6, background: "rgba(255,255,255,0.08)", flexShrink: 0 }} />
+                )}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {col.name}
+                  </div>
+                  <div style={{ fontSize: 12, color: "rgb(168,164,157)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>
+                    {col.collection}
+                    {verifiedStatus(col) && (
+                      <span style={{ marginLeft: 6, color: "rgb(149,117,255)", opacity: 0.8 }}>✓</span>
+                    )}
+                  </div>
+                </div>
+                {isSelected(col) && (
+                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: "rgb(149,117,255)", flexShrink: 0 }} />
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Selected chips + CTA */}
+      {selected.length > 0 && (
+        <section style={{ maxWidth: 640, margin: "0 auto", padding: "32px 24px 0" }}>
+          <p style={{ fontSize: 11, letterSpacing: "0.15em", textTransform: "uppercase", color: "rgb(168,164,157)", marginBottom: 12 }}>
+            Selected {selected.length === MAX_SELECTED && <span style={{ color: "rgba(149,117,255,0.7)" }}>· max reached</span>}
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 24 }}>
+            {selected.map((col) => (
+              <button
+                key={col.collection}
+                onClick={() => toggleCollection(col)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  background: "rgba(149,117,255,0.12)",
+                  border: "1px solid rgba(149,117,255,0.3)",
+                  borderRadius: 999,
+                  padding: "6px 12px",
+                  fontSize: 12,
+                  color: "rgb(149,117,255)",
+                  cursor: "pointer",
+                }}
+              >
+                {col.name}
+                <span style={{ opacity: 0.6 }}>×</span>
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={discover}
+            disabled={selected.length < 2}
+            style={{
+              width: "100%",
+              background: selected.length >= 2 ? "rgb(149,117,255)" : "rgba(149,117,255,0.15)",
+              border: "none",
+              borderRadius: 12,
+              padding: "16px",
+              fontSize: 14,
+              fontWeight: 500,
+              color: selected.length >= 2 ? "#0e0e0e" : "rgba(149,117,255,0.45)",
+              cursor: selected.length >= 2 ? "pointer" : "not-allowed",
+              letterSpacing: "0.02em",
+              transition: "background 0.15s, color 0.15s",
+            }}
+          >
+            {selected.length >= 2 ? "Find overlapping collectors" : "Select at least 2 collections"}
+          </button>
+
+          <p style={{ fontSize: 12, color: "rgb(168,164,157)", marginTop: 12, opacity: 0.6 }}>
+            We&apos;ll look for wallets that hold the collections you picked.
+          </p>
+        </section>
+      )}
+
+      <footer style={{ maxWidth: 640, margin: "0 auto", padding: "80px 24px 48px" }}>
+        <p style={{ fontSize: 11, color: "rgb(168,164,157)", opacity: 0.4 }}>
+          Collections are the proof. Overlap is the signal.
+        </p>
+      </footer>
+
+      <style>{`@keyframes spin { to { transform: translateY(-50%) rotate(360deg); } }`}</style>
+    </main>
+  );
+}
