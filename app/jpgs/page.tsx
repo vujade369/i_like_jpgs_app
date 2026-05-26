@@ -110,8 +110,11 @@ export default function JpgsPage() {
         <h1 style={{ fontSize: 36, fontWeight: 300, lineHeight: 1.2, letterSpacing: "-0.02em", marginBottom: 16 }}>
           Find people who collect what you collect.
         </h1>
-        <p style={{ color: "rgb(168,164,157)", fontSize: 16, lineHeight: 1.7, maxWidth: 480 }}>
-          Search for NFT collections, choose a few that matter, and see wallets with the strongest overlap.
+        <p style={{ color: "rgb(168,164,157)", fontSize: 16, lineHeight: 1.7, maxWidth: 480, marginBottom: 12 }}>
+          Pick a few NFT collections you care about. I Like JPGs finds wallets with the strongest overlap.
+        </p>
+        <p style={{ color: "rgba(168,164,157,0.5)", fontSize: 13, lineHeight: 1.6 }}>
+          No prices. No rarity. Just shared collecting signals.
         </p>
       </section>
 
@@ -147,6 +150,17 @@ export default function JpgsPage() {
             }} />
           )}
         </div>
+
+        {/* Picker helper copy — contextual hint below search bar */}
+        {!showDropdown && !showSelectHint && (
+          <p style={{ fontSize: 12, color: "rgba(168,164,157,0.5)", marginTop: 10, paddingLeft: 2 }}>
+            {selected.length === 0
+              ? "Search for collections, then choose the ones that feel like your taste."
+              : selected.length === 1
+              ? "Add another collection to sharpen the signal."
+              : "This is your taste set."}
+          </p>
+        )}
 
         {/* "Select from list" hint shown when Enter is pressed with no unambiguous selection */}
         {showSelectHint && (
@@ -217,7 +231,7 @@ export default function JpgsPage() {
       {selected.length > 0 && (
         <section style={{ maxWidth: 640, margin: "0 auto", padding: "40px 24px 0" }}>
           <p style={{ fontSize: 11, letterSpacing: "0.15em", textTransform: "uppercase", color: "rgb(168,164,157)", marginBottom: 16 }}>
-            Your taste
+            Your taste set
             {selected.length === MAX_SELECTED && (
               <span style={{ color: "rgba(149,117,255,0.7)", marginLeft: 8 }}>· max reached</span>
             )}
@@ -299,7 +313,7 @@ export default function JpgsPage() {
               letterSpacing: "0.02em",
             }}
           >
-            Find collectors with this taste
+            Find collectors near this taste
           </button>
         </section>
       )}

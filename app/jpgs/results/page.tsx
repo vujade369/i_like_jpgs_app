@@ -45,6 +45,7 @@ function ResultsInner() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [partial, setPartial] = useState(false);
+  const [noCollections, setNoCollections] = useState(false);
 
   useEffect(() => {
     async function run() {
@@ -61,7 +62,7 @@ function ResultsInner() {
         const slugsParam = params.get("collections") ?? "";
         const slugs = slugsParam.split(",").filter(Boolean);
         if (slugs.length === 0) {
-          setError("No collections selected.");
+          setNoCollections(true);
           setLoading(false);
           return;
         }
@@ -100,7 +101,7 @@ function ResultsInner() {
           Collectors near this taste
         </h1>
         <p style={{ color: "rgb(168,164,157)", fontSize: 14, marginBottom: 24 }}>
-          Wallets with strong overlap across your selected collections.
+          Wallets with visible overlap across your selected collections.
         </p>
 
         {collections.length > 0 && (
@@ -160,11 +161,29 @@ function ResultsInner() {
               animation: "spin 0.8s linear infinite",
               margin: "0 auto 16px",
             }} />
-            <p style={{ fontSize: 14, color: "rgb(168,164,157)" }}>Fetching holders…</p>
+            <p style={{ fontSize: 14, color: "rgb(168,164,157)" }}>Finding collectors near this taste…</p>
           </div>
         )}
 
-        {!loading && error && (
+        {!loading && noCollections && (
+          <div style={{
+            background: "#161616",
+            border: "1px solid rgba(255,255,255,0.07)",
+            borderRadius: 16,
+            padding: "40px 32px",
+            textAlign: "center",
+          }}>
+            <p style={{ fontSize: 14, color: "rgb(168,164,157)", marginBottom: 12 }}>Choose a few collections first.</p>
+            <button
+              onClick={() => router.push("/jpgs")}
+              style={{ fontSize: 12, color: "rgb(149,117,255)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+            >
+              ← Back to picker
+            </button>
+          </div>
+        )}
+
+        {!loading && !noCollections && error && (
           <div style={{
             background: "#161616",
             border: "1px solid rgba(255,80,80,0.2)",
@@ -176,7 +195,7 @@ function ResultsInner() {
           </div>
         )}
 
-        {!loading && !error && wallets.length === 0 && (
+        {!loading && !noCollections && !error && wallets.length === 0 && (
           <div style={{
             background: "#161616",
             border: "1px solid rgba(255,255,255,0.07)",
@@ -184,15 +203,15 @@ function ResultsInner() {
             padding: "40px 32px",
             textAlign: "center",
           }}>
-            <p style={{ fontSize: 14, color: "rgb(168,164,157)" }}>No matching collectors found.</p>
+            <p style={{ fontSize: 14, color: "rgb(168,164,157)" }}>No strong overlap found yet. Try a broader or more recognizable collection set.</p>
           </div>
         )}
 
-        {!loading && !error && wallets.length > 0 && (
+        {!loading && !noCollections && !error && wallets.length > 0 && (
           <>
             {partial && (
               <p style={{ fontSize: 12, color: "rgba(168,164,157,0.5)", marginBottom: 16 }}>
-                Partial results — some collections could not be fully fetched.
+                Showing the strongest matches found so far.
               </p>
             )}
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -286,7 +305,7 @@ function CollectorCard({ wallet }: { wallet: CollectorWallet }) {
               )}
               {col.name}
               {col.heldCount > 1 && (
-                <span style={{ color: "rgba(168,164,157,0.5)", marginLeft: 2 }}>×{col.heldCount}</span>
+                <span style={{ color: "rgba(168,164,157,0.5)", marginLeft: 2 }}>· {col.heldCount} held</span>
               )}
             </div>
           ))}
