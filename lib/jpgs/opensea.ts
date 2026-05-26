@@ -406,6 +406,90 @@ export async function fetchCollectionHolders(
   return { holders, nftSampleCount: fetched };
 }
 
+// ─── Wallet NFT fetching ─────────────────────────────────────────────────────
+
+export type OsWalletNft = {
+  identifier?: string;
+  collection?: string;
+  contract?: string;
+  token_standard?: "ERC721" | "ERC1155" | string;
+  name?: string;
+  description?: string;
+  image_url?: string;
+  display_image_url?: string;
+  display_animation_url?: string;
+  animation_url?: string;
+  opensea_url?: string;
+  traits?: Array<{
+    trait_type?: string;
+    value?: string | number;
+  }>;
+  owners?: OsOwner[];
+  quantity?: number;
+};
+
+type AccountNftsResponse = {
+  nfts?: OsWalletNft[];
+  next?: string;
+};
+
+export type FetchWalletNftsResult = {
+  nfts: OsWalletNft[];
+  fetchedPages: number;
+  complete: boolean;
+  stoppedReason: "exhausted" | "max_reached" | "rate_limited" | "http_error" | "error";
+};
+
+export async function fetchWalletNfts(
+  wallet: string,
+  maxNfts = 200,
+): Promise<FetchWalletNftsResult> {
+  const nfts: OsWalletNft[] = [];
+  let cursor: string | undefined;
+  let fetchedPages = 0;
+  let stoppedReason: FetchWalletNftsResult["stoppedReason"] = "exhausted";
+  const pageSize = 50;
+
+  while (nfts.length < maxNfts) {
+    const params = new URLSearchParams({
+      limit: String(Math.min(pageSize, maxNfts - nfts.length)),
+    });
+    if (cursor) params.set("next", cursor);
+
+    try {
+      const data = await osGet<AccountNftsResponse>(
+        `/chain/ethereum/account/${encodeURIComponent(wallet)}/nfts?${params.toString()}`,
+      );
+      const rows = data.nfts ?? [];
+      nfts.push(...rows);
+      fetchedPages++;
+
+      if (!data.next || rows.length === 0) break;
+      cursor = data.next;
+
+      if (nfts.length >= maxNfts) {
+        stoppedReason = "max_reached";
+        break;
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      stoppedReason = message.includes("OpenSea 429")
+        ? "rate_limited"
+        : message.includes("OpenSea")
+          ? "http_error"
+          : "error";
+      break;
+    }
+  }
+
+  return {
+    nfts,
+    fetchedPages,
+    complete: stoppedReason === "exhausted",
+    stoppedReason,
+  };
+}
+
 // ─── Account profiles ─────────────────────────────────────────────────────────
 
 export type OsAccount = {
