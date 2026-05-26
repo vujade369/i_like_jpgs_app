@@ -4,12 +4,13 @@ import { TASTE_CATEGORY_LABELS, type TasteCategory } from "@/lib/jpgs/tasteCateg
 import {
   fetchCollectionBySlug,
   fetchWalletNfts,
+  resolveWalletIdentity,
   type OsCollection,
   type OsWalletNft,
 } from "@/lib/jpgs/opensea";
 
 const WALLET_RE = /^0x[a-fA-F0-9]{40}$/;
-const MAX_VISIBLE_NFTS = 200;
+const MAX_VISIBLE_NFTS = 1000;
 const MAX_COLLECTIONS_TO_ENRICH = 20;
 
 type TopCollection = {
@@ -70,6 +71,7 @@ function toNormalizedNft(
     imageUrl: nftImage(nft),
     animationUrl: nft.display_animation_url || nft.animation_url,
     contractAddress: nft.contract,
+    chain: nft.chain,
     balance: nftBalance(nft),
     traits: (nft.traits ?? [])
       .filter((trait) => trait.trait_type && trait.value !== undefined)
@@ -93,11 +95,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Wallet address is required." }, { status: 400 });
   }
 
-  if (!WALLET_RE.test(walletParam)) {
+  const resolved = WALLET_RE.test(walletParam)
+    ? { address: walletParam.toLowerCase() }
+    : await resolveWalletIdentity(walletParam);
+
+  if (!resolved?.address || !WALLET_RE.test(resolved.address)) {
     return NextResponse.json({ error: "Enter a valid Ethereum wallet address." }, { status: 400 });
   }
 
-  const wallet = walletParam.toLowerCase();
+  const wallet = resolved.address.toLowerCase();
   const visible = await fetchWalletNfts(wallet, MAX_VISIBLE_NFTS);
 
   if (
@@ -195,12 +201,16 @@ export async function GET(req: NextRequest) {
     ...(process.env.NODE_ENV === "development"
       ? {
           debug: {
-            source: "opensea /api/v2/chain/ethereum/account/{wallet}/nfts",
+            source: "opensea /api/v2/chain/{chain}/account/{wallet}/nfts",
             fetchedNfts: visible.nfts.length,
             fetchedPages: visible.fetchedPages,
+            chainsChecked: visible.chainsChecked,
+            chainCounts: visible.chainCounts,
+            fetchedPagesByChain: visible.fetchedPagesByChain,
             complete: visible.complete,
             stoppedReason: visible.stoppedReason,
             maxVisibleNfts: MAX_VISIBLE_NFTS,
+            includeHidden: visible.includeHidden,
             enrichedCollections: enriched.size,
           },
         }

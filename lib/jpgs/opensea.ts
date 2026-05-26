@@ -408,9 +408,21 @@ export async function fetchCollectionHolders(
 
 // ─── Wallet NFT fetching ─────────────────────────────────────────────────────
 
+export const WALLET_READ_CHAINS = [
+  "ethereum",
+  "base",
+  "polygon",
+  "arbitrum",
+  "optimism",
+  "zora",
+] as const;
+
+export type WalletReadChain = (typeof WALLET_READ_CHAINS)[number];
+
 export type OsWalletNft = {
   identifier?: string;
   collection?: string;
+  chain?: WalletReadChain;
   contract?: string;
   token_standard?: "ERC721" | "ERC1155" | string;
   name?: string;
@@ -436,48 +448,79 @@ type AccountNftsResponse = {
 export type FetchWalletNftsResult = {
   nfts: OsWalletNft[];
   fetchedPages: number;
+  chainsChecked: WalletReadChain[];
+  chainCounts: Record<WalletReadChain, number>;
+  fetchedPagesByChain: Record<WalletReadChain, number>;
   complete: boolean;
   stoppedReason: "exhausted" | "max_reached" | "rate_limited" | "http_error" | "error";
+  includeHidden: false;
 };
 
 export async function fetchWalletNfts(
   wallet: string,
   maxNfts = 200,
+  chains: readonly WalletReadChain[] = WALLET_READ_CHAINS,
 ): Promise<FetchWalletNftsResult> {
   const nfts: OsWalletNft[] = [];
-  let cursor: string | undefined;
   let fetchedPages = 0;
   let stoppedReason: FetchWalletNftsResult["stoppedReason"] = "exhausted";
+  const chainsChecked: WalletReadChain[] = [];
+  const chainCounts = Object.fromEntries(
+    WALLET_READ_CHAINS.map((chain) => [chain, 0]),
+  ) as Record<WalletReadChain, number>;
+  const fetchedPagesByChain = Object.fromEntries(
+    WALLET_READ_CHAINS.map((chain) => [chain, 0]),
+  ) as Record<WalletReadChain, number>;
   const pageSize = 50;
 
-  while (nfts.length < maxNfts) {
-    const params = new URLSearchParams({
-      limit: String(Math.min(pageSize, maxNfts - nfts.length)),
-    });
-    if (cursor) params.set("next", cursor);
+  for (const chain of chains) {
+    if (nfts.length >= maxNfts) {
+      stoppedReason = "max_reached";
+      break;
+    }
 
-    try {
-      const data = await osGet<AccountNftsResponse>(
-        `/chain/ethereum/account/${encodeURIComponent(wallet)}/nfts?${params.toString()}`,
-      );
-      const rows = data.nfts ?? [];
-      nfts.push(...rows);
-      fetchedPages++;
+    chainsChecked.push(chain);
+    let cursor: string | undefined;
 
-      if (!data.next || rows.length === 0) break;
-      cursor = data.next;
+    while (nfts.length < maxNfts) {
+      const params = new URLSearchParams({
+        include_hidden: "false",
+        limit: String(Math.min(pageSize, maxNfts - nfts.length)),
+      });
+      if (cursor) params.set("next", cursor);
 
-      if (nfts.length >= maxNfts) {
-        stoppedReason = "max_reached";
+      try {
+        const data = await osGet<AccountNftsResponse>(
+          `/chain/${chain}/account/${encodeURIComponent(wallet)}/nfts?${params.toString()}`,
+        );
+        const rows = (data.nfts ?? []).map((nft) => ({ ...nft, chain }));
+        nfts.push(...rows);
+        chainCounts[chain] += rows.length;
+        fetchedPages++;
+        fetchedPagesByChain[chain]++;
+
+        if (!data.next || rows.length === 0) break;
+        cursor = data.next;
+
+        if (nfts.length >= maxNfts) {
+          stoppedReason = "max_reached";
+          break;
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        stoppedReason = message.includes("OpenSea 429")
+          ? "rate_limited"
+          : message.includes("OpenSea")
+            ? "http_error"
+            : "error";
         break;
       }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      stoppedReason = message.includes("OpenSea 429")
-        ? "rate_limited"
-        : message.includes("OpenSea")
-          ? "http_error"
-          : "error";
+    }
+
+    if (stoppedReason !== "exhausted") break;
+
+    if (nfts.length >= maxNfts) {
+      stoppedReason = "max_reached";
       break;
     }
   }
@@ -485,8 +528,12 @@ export async function fetchWalletNfts(
   return {
     nfts,
     fetchedPages,
+    chainsChecked,
+    chainCounts,
+    fetchedPagesByChain,
     complete: stoppedReason === "exhausted",
     stoppedReason,
+    includeHidden: false,
   };
 }
 
@@ -495,7 +542,13 @@ export async function fetchWalletNfts(
 export type OsAccount = {
   address: string;
   username?: string;
+  display_name?: string;
+  ens?: string;
+  ens_name?: string;
   profile_image_url?: string;
+  image_url?: string;
+  avatar_url?: string;
+  avatar?: string;
 };
 
 export async function fetchAccount(address: string): Promise<OsAccount | null> {
@@ -507,4 +560,342 @@ export async function fetchAccount(address: string): Promise<OsAccount | null> {
   } catch {
     return null;
   }
+}
+
+export type WalletIdentitySuggestion = {
+  label: string;
+  displayName?: string;
+  username?: string;
+  ens?: string;
+  address?: string;
+  avatarUrl?: string;
+  source: "opensea";
+};
+
+const WALLET_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
+const ETH_SUFFIX_RE = /\.eth$/i;
+const CURATED_IDENTITY_SEARCH_ALIASES: Record<string, string[]> = {
+  vuja: ["vuja_de", "vuja-de", "vuja de"],
+};
+
+function normalizeAddress(address?: string): string | undefined {
+  const trimmed = address?.trim();
+  return trimmed && WALLET_ADDRESS_RE.test(trimmed) ? trimmed.toLowerCase() : undefined;
+}
+
+export function shortAddress(address?: string): string | undefined {
+  const normalized = normalizeAddress(address);
+  return normalized ? `${normalized.slice(0, 6)}...${normalized.slice(-4)}` : undefined;
+}
+
+type NormalizedIdentityText = {
+  normalized: string;
+  compact: string;
+  tokens: string[];
+};
+
+function normalizeIdentityText(value?: string): NormalizedIdentityText {
+  const normalized = (value ?? "")
+    .toLowerCase()
+    .trim()
+    .replace(ETH_SUFFIX_RE, "")
+    .replace(/[_\-\s]+/g, " ")
+    .trim();
+
+  return {
+    normalized,
+    compact: normalized.replace(/\s+/g, ""),
+    tokens: normalized.split(" ").filter(Boolean),
+  };
+}
+
+function avatarFromAccount(account: OsAccount): string | undefined {
+  return (
+    account.profile_image_url ||
+    account.image_url ||
+    account.avatar_url ||
+    account.avatar ||
+    undefined
+  );
+}
+
+function accountToSuggestion(account: OsAccount): WalletIdentitySuggestion | null {
+  const address = normalizeAddress(account.address);
+  const username = account.username?.trim() || undefined;
+  const ens = account.ens?.trim() || account.ens_name?.trim() || undefined;
+  const displayName = account.display_name?.trim() || username || ens || shortAddress(address);
+  const label = displayName || address;
+
+  if (!label) return null;
+
+  return {
+    label,
+    displayName,
+    username,
+    ens,
+    address,
+    avatarUrl: avatarFromAccount(account),
+    source: "opensea",
+  };
+}
+
+export function extractOpenSeaProfileIdentifier(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  try {
+    const url = new URL(trimmed);
+    const host = url.hostname.replace(/^www\./, "").toLowerCase();
+    if (host !== "opensea.io") return null;
+    const [firstSegment] = url.pathname.split("/").filter(Boolean);
+    if (!firstSegment) return null;
+    if (["assets", "collection", "rankings", "activity"].includes(firstSegment.toLowerCase())) {
+      return null;
+    }
+    return decodeURIComponent(firstSegment);
+  } catch {
+    return null;
+  }
+}
+
+export function normalizeWalletIdentityInput(input: string): string {
+  const trimmed = input.trim();
+  return extractOpenSeaProfileIdentifier(trimmed) ?? trimmed;
+}
+
+function identitySearchCandidates(input: string): string[] {
+  const normalizedInput = normalizeWalletIdentityInput(input);
+  const base = normalizedInput.trim().replace(ETH_SUFFIX_RE, "");
+  const normalized = normalizeIdentityText(base).normalized;
+  const candidates = new Set<string>();
+  const add = (value: string) => {
+    const trimmed = value.trim();
+    if (trimmed) candidates.add(trimmed);
+  };
+
+  add(normalizedInput);
+  add(base);
+  if (normalized) {
+    add(normalized.replace(/\s+/g, "-"));
+    add(normalized.replace(/\s+/g, "_"));
+    add(normalized);
+    for (const alias of CURATED_IDENTITY_SEARCH_ALIASES[normalized.replace(/\s+/g, "")] ?? []) {
+      add(alias);
+    }
+  }
+
+  return Array.from(candidates).slice(0, 4);
+}
+
+function identityResolveCandidates(input: string): string[] {
+  const candidates = new Set(identitySearchCandidates(input));
+  const normalizedInput = normalizeWalletIdentityInput(input).trim();
+  const rawAddress = normalizeAddress(normalizedInput);
+
+  if (!rawAddress && normalizedInput && !ETH_SUFFIX_RE.test(normalizedInput)) {
+    candidates.add(`${normalizedInput}.eth`);
+  }
+
+  return Array.from(candidates).slice(0, 5);
+}
+
+function suggestionDedupKey(suggestion: WalletIdentitySuggestion): string {
+  const address = normalizeAddress(suggestion.address);
+  if (address) return `address:${address}`;
+
+  const username = suggestion.username?.trim().toLowerCase();
+  if (username) return `username:${username}`;
+
+  const ens = suggestion.ens?.trim().toLowerCase();
+  if (ens) return `ens:${ens}`;
+
+  return `label:${suggestion.label.trim().toLowerCase()}`;
+}
+
+function mergeSuggestionField(current?: string, next?: string): string | undefined {
+  const trimmedNext = next?.trim();
+  if (!current?.trim()) return trimmedNext || undefined;
+  return current;
+}
+
+function mergeWalletSuggestions(
+  current: WalletIdentitySuggestion,
+  next: WalletIdentitySuggestion,
+): WalletIdentitySuggestion {
+  return {
+    label: mergeSuggestionField(current.label, next.label) ?? next.label,
+    displayName: mergeSuggestionField(current.displayName, next.displayName),
+    username: mergeSuggestionField(current.username, next.username),
+    ens: mergeSuggestionField(current.ens, next.ens),
+    address: normalizeAddress(current.address) ?? normalizeAddress(next.address),
+    avatarUrl: mergeSuggestionField(current.avatarUrl, next.avatarUrl),
+    source: current.source,
+  };
+}
+
+function suggestionTextParts(suggestion: WalletIdentitySuggestion): string[] {
+  return [
+    suggestion.displayName,
+    suggestion.username,
+    suggestion.ens,
+    suggestion.address,
+    suggestion.label,
+  ].filter((part): part is string => Boolean(part?.trim()));
+}
+
+function includesAnyQuerySignal(query: NormalizedIdentityText, suggestion: WalletIdentitySuggestion): boolean {
+  if (!query.normalized && !query.compact) return true;
+
+  return suggestionTextParts(suggestion).some((part) => {
+    const candidate = normalizeIdentityText(part);
+    return (
+      (query.normalized && candidate.normalized.includes(query.normalized)) ||
+      (query.compact && candidate.compact.includes(query.compact)) ||
+      query.tokens.some((token) => candidate.tokens.includes(token) || candidate.compact.includes(token))
+    );
+  });
+}
+
+export function rankWalletSuggestion(
+  query: string,
+  suggestion: WalletIdentitySuggestion,
+): number {
+  const normalizedQueryInput = normalizeWalletIdentityInput(query);
+  const queryText = normalizeIdentityText(normalizedQueryInput);
+  const queryAddress = normalizeAddress(normalizedQueryInput);
+  const address = normalizeAddress(suggestion.address);
+  let score = 0;
+
+  if (queryAddress && address === queryAddress) score += 1000;
+
+  const ens = normalizeIdentityText(suggestion.ens);
+  if (queryText.normalized && ens.normalized === queryText.normalized) score += 900;
+  if (queryText.normalized && ens.normalized.startsWith(queryText.normalized)) score += 800;
+
+  const username = normalizeIdentityText(suggestion.username);
+  if (queryText.normalized && username.normalized === queryText.normalized) score += 760;
+  if (queryText.normalized && username.normalized.startsWith(queryText.normalized)) score += 700;
+
+  const displayName = normalizeIdentityText(suggestion.displayName);
+  if (queryText.normalized && displayName.normalized === queryText.normalized) score += 650;
+  if (queryText.normalized && displayName.normalized.startsWith(queryText.normalized)) score += 600;
+
+  const fields = suggestionTextParts(suggestion).map(normalizeIdentityText);
+  if (queryText.normalized && fields.some((field) => field.normalized === queryText.normalized)) {
+    score += 550;
+  }
+  if (queryText.normalized && fields.some((field) => field.normalized.startsWith(queryText.normalized))) {
+    score += 500;
+  }
+  if (queryText.compact && fields.some((field) => field.compact.startsWith(queryText.compact))) {
+    score += 450;
+  }
+  if (
+    queryText.tokens.length > 0 &&
+    fields.some(
+      (field) =>
+        field.normalized.startsWith(queryText.normalized) &&
+        field.tokens.length === queryText.tokens.length,
+    )
+  ) {
+    score += 80;
+  }
+
+  const aggregateText = normalizeIdentityText(suggestionTextParts(suggestion).join(" "));
+  if (
+    queryText.tokens.length > 0 &&
+    queryText.tokens.every(
+      (token) => aggregateText.tokens.includes(token) || aggregateText.compact.includes(token),
+    )
+  ) {
+    score += 300;
+  }
+
+  if (suggestion.avatarUrl) score += 15;
+  if (address) score += 15;
+  if (suggestion.source === "opensea") score += 5;
+  if (!address) score -= 100;
+  if (!includesAnyQuerySignal(queryText, suggestion)) score -= 200;
+
+  return score;
+}
+
+export async function resolveWalletIdentity(input: string): Promise<WalletIdentitySuggestion | null> {
+  const identifier = normalizeWalletIdentityInput(input);
+  if (!identifier) return null;
+
+  const rawAddress = normalizeAddress(identifier);
+  if (rawAddress) {
+    const account = await fetchAccount(rawAddress);
+    return accountToSuggestion(account ?? { address: rawAddress });
+  }
+
+  try {
+    const account = await osGet<OsAccount>(
+      `/accounts/resolve/${encodeURIComponent(identifier)}`,
+      { next: { revalidate: 300 } } as RequestInit,
+    );
+    return accountToSuggestion(account);
+  } catch {
+    try {
+      const account = await osGet<OsAccount>(
+        `/accounts/${encodeURIComponent(identifier)}`,
+        { next: { revalidate: 300 } } as RequestInit,
+      );
+      return accountToSuggestion(account);
+    } catch {
+      return null;
+    }
+  }
+}
+
+export async function searchWalletIdentities(
+  query: string,
+  limit = 6,
+): Promise<WalletIdentitySuggestion[]> {
+  const normalizedQuery = normalizeWalletIdentityInput(query);
+  if (normalizedQuery.trim().length < 2) return [];
+
+  const suggestions = new Map<string, WalletIdentitySuggestion>();
+  const addSuggestion = (suggestion: WalletIdentitySuggestion | null) => {
+    if (!suggestion) return;
+    const key = suggestionDedupKey(suggestion);
+    const existing = suggestions.get(key);
+    suggestions.set(key, existing ? mergeWalletSuggestions(existing, suggestion) : suggestion);
+  };
+
+  const resolveCandidates = identityResolveCandidates(normalizedQuery);
+  const resolved = await Promise.all(
+    resolveCandidates.map((candidate) => resolveWalletIdentity(candidate)),
+  );
+  resolved.forEach(addSuggestion);
+
+  const searchCandidates = identitySearchCandidates(normalizedQuery);
+  const searchLimit = Math.max(limit * 8, 50);
+  await Promise.all(
+    searchCandidates.map(async (candidate) => {
+      try {
+        const data = await osGet<{
+          results?: Array<{
+            type: string;
+            account?: OsAccount;
+          }>;
+        }>(
+          `/search?query=${encodeURIComponent(candidate)}&asset_types=account&limit=${searchLimit}`,
+          { next: { revalidate: 60 } } as RequestInit,
+        );
+
+        for (const row of data.results ?? []) {
+          if (row.type !== "account" || !row.account) continue;
+          addSuggestion(accountToSuggestion(row.account));
+        }
+      } catch {
+        // Other candidates and exact resolution can still produce suggestions.
+      }
+    }),
+  );
+
+  return Array.from(suggestions.values())
+    .sort((a, b) => rankWalletSuggestion(normalizedQuery, b) - rankWalletSuggestion(normalizedQuery, a))
+    .slice(0, limit);
 }
