@@ -24,3 +24,14 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* I Like JPGs design tokens */
+:root {
+  --jpgs-bg: #0e0e0e;
+  --jpgs-surface: #161616;
+  --jpgs-surface-2: #1a1a1a;
+  --jpgs-text: rgb(240, 237, 230);
+  --jpgs-muted: rgb(168, 164, 157);
+  --jpgs-accent: rgb(149, 117, 255);
+  --jpgs-border: rgba(255, 255, 255, 0.08);
+}
