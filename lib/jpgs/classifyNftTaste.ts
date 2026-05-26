@@ -26,6 +26,7 @@ export type NormalizedNft = {
   animationUrl?: string;
   imageUrl?: string;
   contractAddress?: string;
+  chain?: string;
   balance?: number;
 };
 
