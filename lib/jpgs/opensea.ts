@@ -316,17 +316,56 @@ export async function rankAndFilterCollections(
   return { collections, slugFallbackUsed, slugFallbackSuppressed, meaningfulTokens };
 }
 
-export async function searchCollections(query: string): Promise<OsCollection[]> {
+export type OsSearchHit = {
+  slug: string;
+  name: string;
+  image_url?: string;
+  opensea_url?: string;
+  is_disabled?: boolean;
+  is_nsfw?: boolean;
+};
+
+// Calls the OpenSea /search endpoint which actually performs ranked text search
+// (unlike /collections?q= which ignores the query param).
+export async function osSearch(query: string, limit = 15): Promise<OsSearchHit[]> {
   if (!query.trim()) return [];
-  const data = await osGet<{ collections: OsCollection[] }>(
-    `/collections?chain=ethereum&q=${encodeURIComponent(query)}&limit=30`,
-    { next: { revalidate: 60 } } as RequestInit,
-  );
-  return data.collections ?? [];
+  try {
+    const data = await osGet<{
+      results: Array<{
+        type: string;
+        collection?: OsCollection & { collection: string };
+      }>;
+    }>(
+      `/search?query=${encodeURIComponent(query)}&limit=${limit}`,
+      { next: { revalidate: 60 } } as RequestInit,
+    );
+    return (data.results ?? [])
+      .filter(
+        (r): r is { type: string; collection: NonNullable<(typeof r)["collection"]> } =>
+          r.type === "collection" &&
+          r.collection != null &&
+          typeof r.collection.collection === "string" &&
+          r.collection.collection.length > 0,
+      )
+      .map((r) => ({
+        slug: r.collection.collection,
+        name: r.collection.name ?? "",
+        image_url: r.collection.image_url,
+        opensea_url: r.collection.opensea_url,
+        is_disabled: r.collection.is_disabled ?? false,
+        is_nsfw: r.collection.is_nsfw ?? false,
+      }))
+      .filter((r) => !r.is_disabled);
+  } catch {
+    return [];
+  }
 }
 
-export async function fetchCollectionBySlug(slug: string): Promise<OsCollection | null> {
-  return fetchBySlugWithTimeout(slug, 5000);
+export async function fetchCollectionBySlug(
+  slug: string,
+  timeoutMs = 5000,
+): Promise<OsCollection | null> {
+  return fetchBySlugWithTimeout(slug, timeoutMs);
 }
 
 // ─── Holder fetching ──────────────────────────────────────────────────────────
