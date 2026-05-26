@@ -1,89 +1,152 @@
 import type { NextRequest } from "next/server";
 import {
-  searchCollections,
-  rankAndFilterCollections,
+  fetchCollectionBySlug,
   getCollectionSlug,
   getCollectionName,
-  getSafelistStatus,
-  calcRelevanceScore,
-  calcQualityScore,
+  type OsCollection,
 } from "@/lib/jpgs/opensea";
-import { findKnownByQuery } from "@/lib/jpgs/knownCollections";
 
 const ZERO_X_RE = /^0x[0-9a-f]{10,}$/i;
+const OPENSEA_BASE = "https://api.opensea.io/api/v2";
+
+// Curated query → canonical slug(s).
+// Required for collections whose slug cannot be derived from the common search term
+// (e.g. "bored ape" → "boredapeyachtclub", "the memes" → "thememes6529").
+// Curated results always rank above generated slug variations.
+const CURATED: Record<string, string[]> = {
+  "bored ape": ["boredapeyachtclub"],
+  "bored ape yacht club": ["boredapeyachtclub"],
+  "bayc": ["boredapeyachtclub"],
+  "the memes": ["thememes6529"],
+  "the memes by 6529": ["thememes6529"],
+  "memes by 6529": ["thememes6529"],
+  "memes 6529": ["thememes6529"],
+  "kamagang": ["thekamagang"],
+  "kama": ["thekamagang"],
+  "crypto punks": ["cryptopunks"],
+  "punks": ["cryptopunks"],
+  "doodles": ["doodles-official"],
+};
+
+type CandidateSource = "curated" | "generated";
+type Candidate = { slug: string; source: CandidateSource };
+
+// Build ordered slug candidates tagged with their source.
+// OpenSea's /collections list endpoint ignores all search params — direct slug
+// lookup is the only reliable v2 mechanism.
+function buildCandidates(q: string): Candidate[] {
+  const norm = q.toLowerCase().trim();
+  const slugForm = norm.replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+  const compact = norm.replace(/[\s\-_]+/g, "");
+
+  const seen = new Set<string>();
+  const result: Candidate[] = [];
+
+  const add = (slug: string, source: CandidateSource) => {
+    if (!slug || seen.has(slug)) return;
+    seen.add(slug);
+    result.push({ slug, source });
+  };
+
+  // Curated aliases first — these encode explicit intent for the query.
+  for (const s of CURATED[norm] ?? []) add(s, "curated");
+
+  // Generated variations: slug-form, compact (no separators),
+  // "the"-prefix (very common in NFT slugs), and "the"-stripped inverse.
+  add(slugForm, "generated");
+  if (compact !== slugForm) add(compact, "generated");
+  if (compact.length >= 3 && !compact.startsWith("the")) add("the" + compact, "generated");
+  if (compact.startsWith("the") && compact.length > 3) add(compact.slice(3), "generated");
+
+  return result;
+}
+
+// Priority: curated > generated. Tiebreaker: name/slug similarity to the query.
+const SOURCE_RANK: Record<CandidateSource, number> = { curated: 1, generated: 0 };
+
+function nameMatchScore(col: OsCollection, norm: string, slugForm: string): number {
+  const slug = getCollectionSlug(col).toLowerCase();
+  const name = getCollectionName(col).toLowerCase();
+  if (slug === norm || slug === slugForm || name === norm) return 3;
+  if (name.startsWith(norm) || slug.startsWith(slugForm)) return 2;
+  if (name.includes(norm) || slug.includes(slugForm)) return 1;
+  return 0;
+}
 
 export async function GET(req: NextRequest) {
   const q = req.nextUrl.searchParams.get("q") ?? "";
   const debug = req.nextUrl.searchParams.get("debug") === "1";
 
   if (!q.trim()) return Response.json({ collections: [] });
+  if (ZERO_X_RE.test(q.trim())) return Response.json({ collections: [] });
 
-  try {
-    // If query is a known contract address, skip OpenSea search entirely
-    const isContractQuery = ZERO_X_RE.test(q.trim());
+  const norm = q.toLowerCase().trim();
+  const slugForm = norm.replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
 
-    // For unknown 0x contract queries return empty — OpenSea won't find them either
-    if (isContractQuery) {
-      const { collections: ranked } = await rankAndFilterCollections([], q);
-      if (ranked.length === 0) return Response.json({ collections: [] });
-      return Response.json({ collections: ranked.slice(0, 8) });
-    }
+  const candidates = buildCandidates(q);
+  const lookupUrls = candidates.map(
+    (c) => `${OPENSEA_BASE}/collections/${encodeURIComponent(c.slug)}`,
+  );
+  console.log("[collections/search] candidates for", JSON.stringify(q), "->", candidates);
 
-    const raw = await searchCollections(q);
-    const {
-      collections: ranked,
-      slugFallbackUsed,
-      slugFallbackSuppressed,
-      meaningfulTokens,
-    } = await rankAndFilterCollections(raw, q);
-    const returned = ranked.slice(0, 8);
+  // Fetch all candidates in parallel.
+  const fetched = await Promise.all(
+    candidates.map((c) => fetchCollectionBySlug(c.slug)),
+  );
 
-    if (debug) {
-      const knownMatches = findKnownByQuery(q);
-      return Response.json({
-        collections: returned,
-        debug: {
-          query: q,
-          meaningfulTokens,
-          rawCount: raw.length,
-          knownMatches: knownMatches.map((k) => k.slug),
-          rankedCount: ranked.length,
-          returnedCount: returned.length,
-          slugFallbackUsed,
-          slugFallbackSuppressed,
-          rawSample: raw.slice(0, 5).map((c) => {
-            const slug = getCollectionSlug(c);
-            const name = getCollectionName(c);
-            return {
-              collection: c.collection ?? null,
-              slug: c.slug ?? null,
-              name,
-              normalizedSlug: slug.toLowerCase(),
-              normalizedName: name.toLowerCase().trim(),
-              relevanceScore: calcRelevanceScore(c, q),
-              qualityScore: calcQualityScore(c),
-              hasImage: !!c.image_url,
-              safelist_status: getSafelistStatus(c) || null,
-            };
-          }),
-          topReturned: returned.map((c) => ({
-            slug: c.collection,
-            name: c.name,
-            score: c._score,
-            relevanceScore: c._relevanceScore,
-            qualityScore: c._qualityScore,
-            knownBoost: c._knownBoost,
-            hasImage: !!c.image_url,
-            contract: c.contracts?.[0]?.address ?? null,
-            safelist_status: getSafelistStatus(c) || null,
-          })),
-        },
-      });
-    }
-
-    return Response.json({ collections: returned });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Search failed";
-    return Response.json({ error: message }, { status: 500 });
+  // Build a slug → source map from the candidates that actually resolved.
+  const sourceMap = new Map<string, CandidateSource>();
+  for (let i = 0; i < candidates.length; i++) {
+    const col = fetched[i];
+    if (!col) continue;
+    const slug = getCollectionSlug(col);
+    // First writer wins — preserves curated priority when a slug is both curated
+    // and happens to also be a generated candidate.
+    if (slug && !sourceMap.has(slug)) sourceMap.set(slug, candidates[i].source);
   }
+
+  // Deduplicate by returned slug.
+  const seen = new Set<string>();
+  const valid: OsCollection[] = [];
+  for (const col of fetched) {
+    if (!col) continue;
+    const slug = getCollectionSlug(col);
+    const name = getCollectionName(col);
+    if (!slug || !name || seen.has(slug)) continue;
+    seen.add(slug);
+    valid.push(col);
+  }
+
+  // Sort: curated > generated, then name/slug match quality as tiebreaker.
+  valid.sort((a, b) => {
+    const aSource = sourceMap.get(getCollectionSlug(a)) ?? "generated";
+    const bSource = sourceMap.get(getCollectionSlug(b)) ?? "generated";
+    const srcDiff = SOURCE_RANK[bSource] - SOURCE_RANK[aSource];
+    if (srcDiff !== 0) return srcDiff;
+    return nameMatchScore(b, norm, slugForm) - nameMatchScore(a, norm, slugForm);
+  });
+
+  console.log("[collections/search] found", valid.length, "for", JSON.stringify(q));
+
+  if (debug) {
+    return Response.json({
+      collections: valid,
+      debug: {
+        query: q,
+        openSeaUrl: lookupUrls[0] ?? null,
+        lookupUrls,
+        rawCount: candidates.length,
+        validCount: valid.length,
+        results: valid.slice(0, 10).map((c) => ({
+          collection: c.collection ?? null,
+          name: c.name,
+          slug: getCollectionSlug(c),
+          source: sourceMap.get(getCollectionSlug(c)) ?? "generated",
+          hasImage: !!c.image_url,
+        })),
+      },
+    });
+  }
+
+  return Response.json({ collections: valid });
 }

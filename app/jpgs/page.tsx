@@ -80,9 +80,20 @@ export default function JpgsPage() {
   }
 
   function discover() {
-    if (selected.length < 2) return;
+    if (selected.length < 1) return;
+    sessionStorage.setItem(
+      "jpgs_selected_collections",
+      JSON.stringify(
+        selected.map((c) => ({
+          slug: c.collection,
+          name: c.name,
+          image_url: c.image_url,
+          contract: c.contracts?.[0]?.address,
+        })),
+      ),
+    );
     const slugs = selected.map((c) => c.collection).join(",");
-    router.push(`/jpgs/results?slugs=${encodeURIComponent(slugs)}`);
+    router.push(`/jpgs/results?collections=${encodeURIComponent(slugs)}`);
   }
 
   const showDropdown = results.length > 0;
@@ -202,59 +213,94 @@ export default function JpgsPage() {
         )}
       </section>
 
-      {/* Selected chips + CTA */}
+      {/* Selected taste set + CTA */}
       {selected.length > 0 && (
-        <section style={{ maxWidth: 640, margin: "0 auto", padding: "32px 24px 0" }}>
-          <p style={{ fontSize: 11, letterSpacing: "0.15em", textTransform: "uppercase", color: "rgb(168,164,157)", marginBottom: 12 }}>
-            Selected {selected.length === MAX_SELECTED && <span style={{ color: "rgba(149,117,255,0.7)" }}>· max reached</span>}
+        <section style={{ maxWidth: 640, margin: "0 auto", padding: "40px 24px 0" }}>
+          <p style={{ fontSize: 11, letterSpacing: "0.15em", textTransform: "uppercase", color: "rgb(168,164,157)", marginBottom: 16 }}>
+            Your taste
+            {selected.length === MAX_SELECTED && (
+              <span style={{ color: "rgba(149,117,255,0.7)", marginLeft: 8 }}>· max reached</span>
+            )}
           </p>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 24 }}>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10, marginBottom: 32 }}>
             {selected.map((col) => (
-              <button
+              <div
                 key={col.collection}
-                onClick={() => toggleCollection(col)}
                 style={{
+                  position: "relative",
+                  background: "#161616",
+                  border: "1px solid rgba(255,255,255,0.07)",
+                  borderRadius: 12,
+                  padding: "14px 14px 12px",
                   display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  background: "rgba(149,117,255,0.12)",
-                  border: "1px solid rgba(149,117,255,0.3)",
-                  borderRadius: 999,
-                  padding: "6px 12px",
-                  fontSize: 12,
-                  color: "rgb(149,117,255)",
-                  cursor: "pointer",
+                  alignItems: "flex-start",
+                  gap: 12,
                 }}
               >
-                {col.name}
-                <span style={{ opacity: 0.6 }}>×</span>
-              </button>
+                {col.image_url ? (
+                  // eslint-disable-next-line @next/next-image/no-img-element
+                  <img
+                    src={col.image_url}
+                    alt=""
+                    style={{ width: 40, height: 40, borderRadius: 8, objectFit: "cover", flexShrink: 0, marginTop: 2 }}
+                  />
+                ) : (
+                  <div style={{ width: 40, height: 40, borderRadius: 8, background: "rgba(149,117,255,0.1)", flexShrink: 0, marginTop: 2 }} />
+                )}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: "rgb(240,237,230)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: 3 }}>
+                    {col.name}
+                  </div>
+                  <div style={{ fontSize: 11, color: "rgba(168,164,157,0.6)", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {col.collection}
+                  </div>
+                </div>
+                <button
+                  onClick={() => toggleCollection(col)}
+                  aria-label={`Remove ${col.name}`}
+                  style={{
+                    position: "absolute",
+                    top: 8,
+                    right: 8,
+                    width: 20,
+                    height: 20,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "rgba(255,255,255,0.07)",
+                    border: "none",
+                    borderRadius: "50%",
+                    color: "rgba(168,164,157,0.7)",
+                    fontSize: 12,
+                    cursor: "pointer",
+                    padding: 0,
+                    lineHeight: 1,
+                  }}
+                >
+                  ×
+                </button>
+              </div>
             ))}
           </div>
 
           <button
             onClick={discover}
-            disabled={selected.length < 2}
             style={{
               width: "100%",
-              background: selected.length >= 2 ? "rgb(149,117,255)" : "rgba(149,117,255,0.15)",
+              background: "rgb(149,117,255)",
               border: "none",
               borderRadius: 12,
               padding: "16px",
               fontSize: 14,
               fontWeight: 500,
-              color: selected.length >= 2 ? "#0e0e0e" : "rgba(149,117,255,0.45)",
-              cursor: selected.length >= 2 ? "pointer" : "not-allowed",
+              color: "#0e0e0e",
+              cursor: "pointer",
               letterSpacing: "0.02em",
-              transition: "background 0.15s, color 0.15s",
             }}
           >
-            {selected.length >= 2 ? "Find overlapping collectors" : "Select at least 2 collections"}
+            Find collectors with this taste
           </button>
-
-          <p style={{ fontSize: 12, color: "rgb(168,164,157)", marginTop: 12, opacity: 0.6 }}>
-            We&apos;ll look for wallets that hold the collections you picked.
-          </p>
         </section>
       )}
 
