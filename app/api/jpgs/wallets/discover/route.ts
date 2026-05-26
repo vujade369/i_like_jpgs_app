@@ -60,6 +60,10 @@ export async function POST(req: NextRequest) {
       address: wallet.address,
       displayName: profile?.username ?? shortenAddress(wallet.address),
       avatarUrl: profile?.profile_image_url ?? undefined,
+      openseaUsername: profile?.username ?? undefined,
+      openseaProfileUrl: profile?.username
+        ? `https://opensea.io/${profile.username}`
+        : `https://opensea.io/${wallet.address}`,
       matchedCollections: wallet.matchedCollections,
       matchedCollectionCount: wallet.matchedCollectionCount,
       totalHeldFromSelected: wallet.totalHeldFromSelected,

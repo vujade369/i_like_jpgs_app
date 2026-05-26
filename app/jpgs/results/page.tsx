@@ -21,6 +21,8 @@ type CollectorWallet = {
   address: string;
   displayName: string;
   avatarUrl?: string;
+  openseaUsername?: string;
+  openseaProfileUrl: string;
   matchedCollections: MatchedCollection[];
   matchedCollectionCount: number;
   totalHeldFromSelected: number;
@@ -46,6 +48,7 @@ function ResultsInner() {
   const [error, setError] = useState<string | null>(null);
   const [partial, setPartial] = useState(false);
   const [noCollections, setNoCollections] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(20);
 
   useEffect(() => {
     async function run() {
@@ -215,10 +218,28 @@ function ResultsInner() {
               </p>
             )}
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {wallets.map((wallet) => (
+              {wallets.slice(0, visibleCount).map((wallet) => (
                 <CollectorCard key={wallet.address} wallet={wallet} />
               ))}
             </div>
+            {wallets.length > visibleCount && (
+              <button
+                onClick={() => setVisibleCount((c) => c + 20)}
+                style={{
+                  marginTop: 16,
+                  width: "100%",
+                  padding: "12px 0",
+                  background: "rgba(255,255,255,0.04)",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  borderRadius: 10,
+                  fontSize: 13,
+                  color: "rgb(168,164,157)",
+                  cursor: "pointer",
+                }}
+              >
+                Show more collectors
+              </button>
+            )}
           </>
         )}
       </section>
@@ -241,37 +262,49 @@ function CollectorCard({ wallet }: { wallet: CollectorWallet }) {
       gap: 16,
       alignItems: "flex-start",
     }}>
-      <div style={{
-        flexShrink: 0,
-        width: 44,
-        height: 44,
-        borderRadius: "50%",
-        overflow: "hidden",
-        background: "rgba(149,117,255,0.15)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}>
+      <a
+        href={wallet.openseaProfileUrl}
+        target="_blank"
+        rel="noreferrer"
+        style={{
+          flexShrink: 0,
+          width: 44,
+          height: 44,
+          borderRadius: "50%",
+          overflow: "hidden",
+          background: "rgba(149,117,255,0.15)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          textDecoration: "none",
+        }}
+      >
         {wallet.avatarUrl ? (
           // eslint-disable-next-line @next/next-image/no-img-element
           <img src={wallet.avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         ) : (
           <span style={{ fontSize: 13, color: "rgb(149,117,255)", fontWeight: 500 }}>{initials}</span>
         )}
-      </div>
+      </a>
 
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4 }}>
-          <span style={{
-            fontSize: 14,
-            fontWeight: 500,
-            color: "rgb(240,237,230)",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}>
+          <a
+            href={wallet.openseaProfileUrl}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              fontSize: 14,
+              fontWeight: 500,
+              color: "rgb(240,237,230)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              textDecoration: "none",
+            }}
+          >
             {wallet.displayName}
-          </span>
+          </a>
           <span style={{ fontSize: 11, color: "rgb(149,117,255)", flexShrink: 0, fontWeight: 600 }}>
             {wallet.score}
           </span>
@@ -310,6 +343,21 @@ function CollectorCard({ wallet }: { wallet: CollectorWallet }) {
             </div>
           ))}
         </div>
+
+        <a
+          href={wallet.openseaProfileUrl}
+          target="_blank"
+          rel="noreferrer"
+          style={{
+            display: "inline-block",
+            marginTop: 10,
+            fontSize: 11,
+            color: "rgba(168,164,157,0.4)",
+            textDecoration: "none",
+          }}
+        >
+          View on OpenSea
+        </a>
       </div>
     </div>
   );
