@@ -5,8 +5,8 @@ const MAX_COLLECTIONS_PER_DISCOVERY = 5;
 const HOLDER_FETCH_TIMEOUT_MS = 25_000;
 const CACHE_TTL_MS = 20 * 60 * 1000;
 
-export const ACCOUNT_HYDRATION_LIMIT = 25;
-export const ACCOUNT_HYDRATION_CONCURRENCY = 5;
+export const ACCOUNT_HYDRATION_LIMIT = 10;
+export const ACCOUNT_HYDRATION_CONCURRENCY = 2;
 
 function apiKey(): string {
   const k = process.env.OPENSEA_API_KEY;

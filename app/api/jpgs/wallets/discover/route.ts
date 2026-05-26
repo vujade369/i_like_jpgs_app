@@ -9,8 +9,34 @@ import { fetchAccount } from "@/lib/jpgs/opensea";
 
 type DiscoverBody = { collections: CollectionRef[] };
 
+type AccountCacheEntry = {
+  profile: Awaited<ReturnType<typeof fetchAccount>> | null;
+  fetchedAt: number;
+};
+
+const ACCOUNT_PROFILE_CACHE = new Map<string, AccountCacheEntry>();
+const ACCOUNT_PROFILE_CACHE_TTL_MS = 15 * 60 * 1000;
+
 function shortenAddress(addr: string): string {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+}
+
+async function getAccountProfile(
+  address: string,
+): Promise<{ profile: AccountCacheEntry["profile"]; cached: boolean }> {
+  const cacheKey = address.toLowerCase();
+  const cached = ACCOUNT_PROFILE_CACHE.get(cacheKey);
+
+  if (cached) {
+    if (Date.now() - cached.fetchedAt <= ACCOUNT_PROFILE_CACHE_TTL_MS) {
+      return { profile: cached.profile, cached: true };
+    }
+    ACCOUNT_PROFILE_CACHE.delete(cacheKey);
+  }
+
+  const profile = await fetchAccount(address);
+  ACCOUNT_PROFILE_CACHE.set(cacheKey, { profile, fetchedAt: Date.now() });
+  return { profile, cached: false };
 }
 
 async function runConcurrently<T>(
@@ -45,15 +71,16 @@ export async function POST(req: NextRequest) {
 
   // ENS reverse-name fallback requires RPC/provider setup (viem or ethers + RPC env var).
 
-  type HydrationOutcome = { address: string; outcome: "ok" | "skip" | "fail" };
+  type HydrationOutcome = { address: string; outcome: "ok" | "skip" | "fail" | "cached" };
   const hydrationLog: HydrationOutcome[] = [];
 
   const tasks = top50.map((wallet, i) => async () => {
     let profile = null;
     let outcome: HydrationOutcome["outcome"] = "skip";
     if (i < ACCOUNT_HYDRATION_LIMIT) {
-      profile = await fetchAccount(wallet.address);
-      outcome = profile !== null ? "ok" : "fail";
+      const result = await getAccountProfile(wallet.address);
+      profile = result.profile;
+      outcome = result.cached ? "cached" : profile !== null ? "ok" : "fail";
     }
     hydrationLog.push({ address: wallet.address, outcome });
 
@@ -90,7 +117,10 @@ export async function POST(req: NextRequest) {
     ok: hydrationLog.filter((h) => h.outcome === "ok").length,
     fail: hydrationLog.filter((h) => h.outcome === "fail").length,
     skip: hydrationLog.filter((h) => h.outcome === "skip").length,
+    cached: hydrationLog.filter((h) => h.outcome === "cached").length,
     failures: hydrationLog.filter((h) => h.outcome === "fail").map((h) => h.address),
+    limit: ACCOUNT_HYDRATION_LIMIT,
+    concurrency: ACCOUNT_HYDRATION_CONCURRENCY,
   };
 
   if (hydrationSummary.fail > 0) {
