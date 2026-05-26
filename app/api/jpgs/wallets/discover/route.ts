@@ -43,8 +43,20 @@ export async function POST(req: NextRequest) {
   const top50 = discovery.wallets.slice(0, 50);
   const n = Math.max(collections.length, 1);
 
+  // ENS reverse-name fallback requires RPC/provider setup (viem or ethers + RPC env var).
+
+  type HydrationOutcome = { address: string; outcome: "ok" | "skip" | "fail" };
+  const hydrationLog: HydrationOutcome[] = [];
+
   const tasks = top50.map((wallet, i) => async () => {
-    const profile = i < ACCOUNT_HYDRATION_LIMIT ? await fetchAccount(wallet.address) : null;
+    let profile = null;
+    let outcome: HydrationOutcome["outcome"] = "skip";
+    if (i < ACCOUNT_HYDRATION_LIMIT) {
+      profile = await fetchAccount(wallet.address);
+      outcome = profile !== null ? "ok" : "fail";
+    }
+    hydrationLog.push({ address: wallet.address, outcome });
+
     const score = Math.round(
       Math.min(
         1,
@@ -74,5 +86,20 @@ export async function POST(req: NextRequest) {
 
   const wallets = await runConcurrently(tasks, ACCOUNT_HYDRATION_CONCURRENCY);
 
-  return NextResponse.json({ wallets, collections, debug: discovery.debug });
+  const hydrationSummary = {
+    ok: hydrationLog.filter((h) => h.outcome === "ok").length,
+    fail: hydrationLog.filter((h) => h.outcome === "fail").length,
+    skip: hydrationLog.filter((h) => h.outcome === "skip").length,
+    failures: hydrationLog.filter((h) => h.outcome === "fail").map((h) => h.address),
+  };
+
+  if (hydrationSummary.fail > 0) {
+    console.warn("[jpgs/wallets/discover] profile hydration failures:", hydrationSummary.failures);
+  }
+
+  return NextResponse.json({
+    wallets,
+    collections,
+    debug: { ...discovery.debug, hydrationSummary },
+  });
 }
