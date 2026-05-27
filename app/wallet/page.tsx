@@ -415,17 +415,18 @@ export default function WalletReadPage() {
             type="submit"
             disabled={state === "loading" || atWalletLimit}
             style={{
-              background: "var(--jpgs-accent)",
-              border: "1px solid rgba(255,255,255,0.08)",
+              background: atWalletLimit ? "rgba(255,255,255,0.06)" : "var(--jpgs-accent)",
+              border: atWalletLimit ? "1px solid var(--jpgs-border)" : "1px solid rgba(255,255,255,0.08)",
               borderRadius: 8,
               padding: "0 18px",
-              color: "white",
+              color: atWalletLimit ? "var(--jpgs-muted)" : "white",
               fontSize: 14,
               minHeight: 50,
-              opacity: state === "loading" || atWalletLimit ? 0.7 : 1,
+              opacity: state === "loading" ? 0.7 : 1,
+              cursor: state === "loading" || atWalletLimit ? "not-allowed" : "pointer",
             }}
           >
-            {state === "loading" ? "Reading…" : walletSet.length > 0 ? "Add wallet" : "Read wallet"}
+            {state === "loading" ? "Reading…" : atWalletLimit ? "Limit reached" : walletSet.length > 0 ? "Add wallet" : "Read wallet"}
           </button>
           <button
             type="button"
@@ -486,7 +487,7 @@ export default function WalletReadPage() {
         {state === "loading" && (
           <Panel>
             <p style={eyebrowStyle}>Reading</p>
-            <h2 style={panelTitleStyle}>Fetching visible NFTs.</h2>
+            <h2 style={panelTitleStyle}>Fetching visible JPGs.</h2>
             <p style={mutedTextStyle}>This can take a moment while collection metadata is gathered.</p>
           </Panel>
         )}
@@ -511,11 +512,11 @@ export default function WalletReadPage() {
           <Panel>
             <WalletHeader profile={profile} />
             <div style={{ borderTop: "1px solid var(--jpgs-border)", marginTop: 22, paddingTop: 22 }}>
-              <h2 style={panelTitleStyle}>No visible NFTs found.</h2>
+              <h2 style={panelTitleStyle}>No visible JPGs found.</h2>
               <p style={mutedTextStyle}>
                 {profile.walletCount && profile.walletCount > 1
-                  ? "These wallets did not return visible NFT holdings from the current source."
-                  : "This wallet did not return visible NFT holdings from the current source."}
+                  ? "These wallets did not return visible JPG holdings from the current source."
+                  : "This wallet did not return visible JPG holdings from the current source."}
               </p>
             </div>
           </Panel>
@@ -584,7 +585,7 @@ export default function WalletReadPage() {
                       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
                         <h3 style={{ fontSize: 15, fontWeight: 500 }}>{signal.label}</h3>
                         <span style={{ color: "var(--jpgs-muted)", fontSize: 12 }}>
-                          {signal.nftCount} NFTs
+                          {signal.nftCount} JPGs
                         </span>
                       </div>
                       <p style={{ color: "var(--jpgs-muted)", fontSize: 13, lineHeight: 1.6 }}>
@@ -886,7 +887,7 @@ function WalletHeader({ profile }: { profile: WalletReadResponse }) {
           </p>
         </div>
         <div style={{ display: "flex", gap: 10 }}>
-          <Metric label="NFTs read" value={profile.nftCount} />
+          <Metric label="JPGs read" value={profile.nftCount} />
           <Metric label="Collections" value={profile.collectionCount} />
         </div>
       </div>
