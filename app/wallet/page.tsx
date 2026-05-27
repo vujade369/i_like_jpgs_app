@@ -19,6 +19,21 @@ type TasteSignal = {
   collections: Array<{ slug: string; name: string; count: number }>;
 };
 
+type SourceWalletMetadata = {
+  id: string;
+  input: string;
+  address?: string;
+  shortWallet?: string;
+  displayName?: string;
+  username?: string;
+  ens?: string;
+  avatarUrl?: string;
+  status: "included" | "invalid" | "fetch_failed";
+  nftCount: number;
+  collectionCount: number;
+  error?: string;
+};
+
 type WalletReadResponse = {
   wallet: string;
   shortWallet: string;
@@ -26,6 +41,19 @@ type WalletReadResponse = {
   collectionCount: number;
   topCollections: TopCollection[];
   tasteSignals: TasteSignal[];
+  wallets?: string[];
+  shortWallets?: string[];
+  primaryWallet?: string;
+  walletCount?: number;
+  includedWalletCount?: number;
+  invalidWalletCount?: number;
+  failedWalletCount?: number;
+  sourceWallets?: SourceWalletMetadata[];
+  dedupe?: {
+    inputNftCount: number;
+    dedupedNftCount: number;
+    duplicateNftCount: number;
+  };
   debug?: {
     fetchedPages: number;
     chainsChecked: string[];
@@ -37,6 +65,11 @@ type WalletReadResponse = {
     includeHidden: boolean;
   };
   error?: string;
+};
+
+type WalletReadErrorResponse = Partial<WalletReadResponse> & {
+  error?: string;
+  sourceWallets?: SourceWalletMetadata[];
 };
 
 type ReadState = "idle" | "loading" | "success" | "empty" | "error";
@@ -54,6 +87,7 @@ type WalletSuggestion = {
 
 const SAMPLE_WALLET = "0x5ffd8de19910efff95df729c54699aebcee8f747";
 const WALLET_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
+const MAX_WALLETS = 2;
 
 type WalletReadCopy = {
   headline: string;
@@ -74,51 +108,93 @@ const READ_LABELS: Record<string, string> = {
 
 export default function WalletReadPage() {
   const [wallet, setWallet] = useState("");
+  const [walletSet, setWalletSet] = useState<string[]>([]);
   const [state, setState] = useState<ReadState>("idle");
   const [profile, setProfile] = useState<WalletReadResponse | null>(null);
+  const [errorSources, setErrorSources] = useState<SourceWalletMetadata[]>([]);
   const [error, setError] = useState("");
   const [resolvedWallet, setResolvedWallet] = useState("");
-  const [selectedIdentity, setSelectedIdentity] = useState("");
+  const [selectedSuggestion, setSelectedSuggestion] = useState<WalletSuggestion | null>(null);
   const [suggestions, setSuggestions] = useState<WalletSuggestion[]>([]);
   const [suggestState, setSuggestState] = useState<SuggestState>("idle");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requestSeq = useRef(0);
+  const didHydrateUrl = useRef(false);
 
-  async function readWallet(input: string, identityOverride?: string) {
-    const trimmed = (identityOverride || resolvedWallet || input).trim();
-    if (!trimmed) {
-      setState("error");
-      setError("Enter a wallet address to read.");
+  async function readWalletSet(inputs: string[], options: { syncUrl?: boolean } = {}) {
+    const nextInputs = normalizeWalletInputs(inputs);
+
+    if (nextInputs.length === 0) {
+      setWalletSet([]);
+      setState("idle");
+      setError("");
       setProfile(null);
+      setErrorSources([]);
+      if (options.syncUrl !== false) updateWalletUrl([]);
       return;
     }
 
+    const requestId = requestSeq.current + 1;
+    requestSeq.current = requestId;
+    setWalletSet(nextInputs);
+    if (options.syncUrl !== false) updateWalletUrl(nextInputs);
     setState("loading");
     setError("");
     setProfile(null);
+    setErrorSources([]);
 
     try {
-      const res = await fetch(`/api/wallet/read?wallet=${encodeURIComponent(trimmed)}`);
-      const data = (await res.json()) as WalletReadResponse;
+      const params = new URLSearchParams();
+      nextInputs.forEach((input) => params.append("wallet", input));
+      const res = await fetch(`/api/wallet/read?${params.toString()}`);
+      const data = (await res.json()) as WalletReadResponse | WalletReadErrorResponse;
 
-      if (!res.ok) {
+      if (requestSeq.current !== requestId) return;
+
+      if (!res.ok || !isWalletReadResponse(data)) {
         setState("error");
         setError(data.error || "The wallet read failed.");
+        setErrorSources(data.sourceWallets ?? []);
         return;
       }
 
       setProfile(data);
       setState(data.nftCount === 0 ? "empty" : "success");
+      setErrorSources([]);
+
+      const canonicalInputs = canonicalWalletInputsFromResponse(data, nextInputs);
+      if (!sameWalletInputs(canonicalInputs, nextInputs)) {
+        setWalletSet(canonicalInputs);
+        updateWalletUrl(canonicalInputs);
+      }
     } catch {
+      if (requestSeq.current !== requestId) return;
       setState("error");
       setError("Could not reach the wallet read service.");
+      setErrorSources([]);
     }
   }
 
   useEffect(() => {
+    function hydrateFromUrl() {
+      const inputs = walletInputsFromSearch(window.location.search);
+      void readWalletSet(inputs, { syncUrl: false });
+    }
+
+    if (!didHydrateUrl.current) {
+      didHydrateUrl.current = true;
+      hydrateFromUrl();
+    }
+
+    window.addEventListener("popstate", hydrateFromUrl);
+    return () => window.removeEventListener("popstate", hydrateFromUrl);
+  }, []);
+
+  useEffect(() => {
     const q = wallet.trim();
 
-    if (q.length < 2 || resolvedWallet || WALLET_ADDRESS_RE.test(q)) {
+    if (q.length < 2 || resolvedWallet || WALLET_ADDRESS_RE.test(q) || walletSet.length >= MAX_WALLETS) {
       setSuggestions([]);
       setSuggestState("idle");
       setShowSuggestions(false);
@@ -150,28 +226,47 @@ export default function WalletReadPage() {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [wallet, resolvedWallet]);
+  }, [wallet, resolvedWallet, walletSet.length]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setShowSuggestions(false);
-    void readWallet(wallet);
+
+    if (walletSet.length >= MAX_WALLETS) return;
+
+    const candidate = (selectedSuggestion?.address || resolvedWallet || wallet).trim();
+    if (!candidate) {
+      setState("error");
+      setError("Enter a wallet address to read.");
+      setProfile(null);
+      setErrorSources([]);
+      return;
+    }
+
+    const nextInputs = normalizeWalletInputs([...walletSet, candidate]);
+    setWallet("");
+    setResolvedWallet("");
+    setSelectedSuggestion(null);
+    void readWalletSet(nextInputs);
   }
 
   function useSampleWallet() {
-    setWallet(SAMPLE_WALLET);
+    setWallet("");
     setResolvedWallet("");
-    setSelectedIdentity("");
+    setSelectedSuggestion(null);
     setShowSuggestions(false);
-    void readWallet(SAMPLE_WALLET, SAMPLE_WALLET);
+    void readWalletSet([SAMPLE_WALLET]);
   }
 
   function handleWalletChange(value: string) {
     setWallet(value);
     setResolvedWallet("");
-    setSelectedIdentity("");
+    setSelectedSuggestion(null);
     setShowSuggestions(
-      value.trim().length >= 2 && !WALLET_ADDRESS_RE.test(value.trim()) && suggestions.length > 0,
+      value.trim().length >= 2 &&
+        !WALLET_ADDRESS_RE.test(value.trim()) &&
+        walletSet.length < MAX_WALLETS &&
+        suggestions.length > 0,
     );
   }
 
@@ -179,9 +274,19 @@ export default function WalletReadPage() {
     const readableLabel = suggestion.displayName || suggestion.ens || suggestion.username || suggestion.address || suggestion.label;
     setWallet(readableLabel);
     setResolvedWallet(suggestion.address ?? "");
-    setSelectedIdentity(suggestion.address || suggestion.ens || suggestion.username || suggestion.label);
+    setSelectedSuggestion(suggestion);
     setShowSuggestions(false);
   }
+
+  function removeWallet(addressOrInput: string) {
+    const nextInputs = walletSet.filter((input) => input.toLowerCase() !== addressOrInput.toLowerCase());
+    void readWalletSet(nextInputs);
+  }
+
+  const sourceWallets = profile?.sourceWallets ?? errorSources;
+  const includedSources = sourceWallets.filter((source) => source.status === "included");
+  const sourceNotices = sourceWallets.filter((source) => source.status !== "included");
+  const atWalletLimit = walletSet.length >= MAX_WALLETS;
 
   return (
     <main className="min-h-screen" style={{ background: "var(--jpgs-bg)", color: "var(--jpgs-text)" }}>
@@ -203,7 +308,7 @@ export default function WalletReadPage() {
               onChange={(event) => handleWalletChange(event.target.value)}
               onFocus={() => {
                 if (blurTimer.current) clearTimeout(blurTimer.current);
-                if (suggestions.length > 0) setShowSuggestions(true);
+                if (suggestions.length > 0 && !atWalletLimit) setShowSuggestions(true);
               }}
               onBlur={() => {
                 blurTimer.current = setTimeout(() => setShowSuggestions(false), 120);
@@ -211,10 +316,14 @@ export default function WalletReadPage() {
               onKeyDown={(event) => {
                 if (event.key === "Escape") setShowSuggestions(false);
               }}
-              placeholder="Search name, ENS, OpenSea profile, or wallet address"
+              placeholder={atWalletLimit ? "Two-wallet reads are the current limit." : "Search name, ENS, OpenSea profile, or wallet address"}
               aria-label="Wallet, ENS, OpenSea username, or OpenSea profile URL"
               aria-expanded={showSuggestions}
               aria-controls="wallet-suggestions"
+              disabled={atWalletLimit}
+              name="wallet"
+              autoComplete="off"
+              spellCheck={false}
               style={{
                 width: "100%",
                 boxSizing: "border-box",
@@ -224,10 +333,10 @@ export default function WalletReadPage() {
                 padding: "15px 16px",
                 color: "var(--jpgs-text)",
                 fontSize: 14,
-                outline: "none",
+                opacity: atWalletLimit ? 0.62 : 1,
               }}
             />
-            {suggestState === "loading" && wallet.trim().length >= 2 && !resolvedWallet && (
+            {suggestState === "loading" && wallet.trim().length >= 2 && !resolvedWallet && !atWalletLimit && (
               <div
                 aria-hidden="true"
                 style={{
@@ -243,7 +352,7 @@ export default function WalletReadPage() {
                 }}
               />
             )}
-            {showSuggestions && suggestions.length > 0 && (
+            {showSuggestions && suggestions.length > 0 && !atWalletLimit && (
               <div
                 id="wallet-suggestions"
                 role="listbox"
@@ -304,7 +413,7 @@ export default function WalletReadPage() {
           </div>
           <button
             type="submit"
-            disabled={state === "loading"}
+            disabled={state === "loading" || atWalletLimit}
             style={{
               background: "var(--jpgs-accent)",
               border: "1px solid rgba(255,255,255,0.08)",
@@ -313,10 +422,10 @@ export default function WalletReadPage() {
               color: "white",
               fontSize: 14,
               minHeight: 50,
-              opacity: state === "loading" ? 0.7 : 1,
+              opacity: state === "loading" || atWalletLimit ? 0.7 : 1,
             }}
           >
-            {state === "loading" ? "Reading..." : "Read wallet"}
+            {state === "loading" ? "Reading…" : walletSet.length > 0 ? "Add wallet" : "Read wallet"}
           </button>
           <button
             type="button"
@@ -335,6 +444,32 @@ export default function WalletReadPage() {
             Try sample
           </button>
         </form>
+
+        {(includedSources.length > 0 || sourceNotices.length > 0 || atWalletLimit) && (
+          <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
+            {includedSources.length > 0 && (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }} aria-label="Included wallets">
+                {includedSources.map((source, index) => (
+                  <WalletChip
+                    key={source.id}
+                    source={source}
+                    isPrimary={index === 0}
+                    onRemove={() => removeWallet(source.address || source.input)}
+                  />
+                ))}
+              </div>
+            )}
+            {sourceNotices.length > 0 && (
+              <WalletSourceNotices
+                sources={sourceNotices}
+                onRemove={(source) => removeWallet(source.address || source.input)}
+              />
+            )}
+            {atWalletLimit && (
+              <p style={{ ...mutedTextStyle, fontSize: 12 }}>Two-wallet reads are the current limit.</p>
+            )}
+          </div>
+        )}
       </section>
 
       <section style={{ maxWidth: 920, margin: "0 auto", padding: "0 24px 80px" }}>
@@ -361,6 +496,14 @@ export default function WalletReadPage() {
             <p style={{ ...eyebrowStyle, color: "rgb(255, 138, 128)" }}>Error</p>
             <h2 style={panelTitleStyle}>That wallet could not be read.</h2>
             <p style={mutedTextStyle}>{error}</p>
+            {sourceNotices.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <WalletSourceNotices
+                  sources={sourceNotices}
+                  onRemove={(source) => removeWallet(source.address || source.input)}
+                />
+              </div>
+            )}
           </Panel>
         )}
 
@@ -370,7 +513,9 @@ export default function WalletReadPage() {
             <div style={{ borderTop: "1px solid var(--jpgs-border)", marginTop: 22, paddingTop: 22 }}>
               <h2 style={panelTitleStyle}>No visible NFTs found.</h2>
               <p style={mutedTextStyle}>
-                This wallet did not return visible NFT holdings from the current source.
+                {profile.walletCount && profile.walletCount > 1
+                  ? "These wallets did not return visible NFT holdings from the current source."
+                  : "This wallet did not return visible NFT holdings from the current source."}
               </p>
             </div>
           </Panel>
@@ -458,9 +603,63 @@ export default function WalletReadPage() {
   );
 }
 
+function isWalletReadResponse(data: WalletReadResponse | WalletReadErrorResponse): data is WalletReadResponse {
+  return (
+    typeof data.wallet === "string" &&
+    typeof data.shortWallet === "string" &&
+    typeof data.nftCount === "number" &&
+    Array.isArray(data.topCollections) &&
+    Array.isArray(data.tasteSignals)
+  );
+}
+
+function walletInputsFromSearch(search: string): string[] {
+  return normalizeWalletInputs(new URLSearchParams(search).getAll("wallet"));
+}
+
+function normalizeWalletInputs(inputs: string[]): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  for (const input of inputs) {
+    const trimmed = input.trim();
+    const key = trimmed.toLowerCase();
+    if (!trimmed || seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(trimmed);
+    if (normalized.length >= MAX_WALLETS) break;
+  }
+
+  return normalized;
+}
+
+function canonicalWalletInputsFromResponse(profile: WalletReadResponse, fallbackInputs: string[]): string[] {
+  const sourceInputs = (profile.sourceWallets ?? [])
+    .map((source) => source.address || source.input)
+    .filter((input): input is string => Boolean(input?.trim()));
+
+  return normalizeWalletInputs(sourceInputs.length > 0 ? sourceInputs : fallbackInputs);
+}
+
+function sameWalletInputs(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((input, index) => input.toLowerCase() === b[index]?.toLowerCase());
+}
+
+function updateWalletUrl(inputs: string[]) {
+  const params = new URLSearchParams();
+  normalizeWalletInputs(inputs).forEach((input) => params.append("wallet", input));
+  const nextUrl = params.toString() ? `/wallet?${params.toString()}` : "/wallet";
+  window.history.replaceState(null, "", nextUrl);
+}
+
 function shortWallet(wallet?: string): string {
   if (!wallet) return "";
   return `${wallet.slice(0, 6)}...${wallet.slice(-4)}`;
+}
+
+function sourceLabel(source: SourceWalletMetadata): string {
+  return source.displayName || source.ens || source.username || source.shortWallet || source.address || source.input;
 }
 
 function formatSuggestionHandle(suggestion: WalletSuggestion): string {
@@ -500,7 +699,112 @@ function SuggestionAvatar({ suggestion }: { suggestion: WalletSuggestion }) {
   );
 }
 
+function WalletChip({
+  source,
+  isPrimary,
+  onRemove,
+}: {
+  source: SourceWalletMetadata;
+  isPrimary: boolean;
+  onRemove: () => void;
+}) {
+  const label = sourceLabel(source);
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        maxWidth: "100%",
+        minHeight: 34,
+        padding: "6px 8px 6px 10px",
+        border: "1px solid var(--jpgs-border)",
+        borderRadius: 8,
+        background: "rgba(255,255,255,0.03)",
+        color: "var(--jpgs-text)",
+      }}
+    >
+      <span style={{ minWidth: 0 }}>
+        <span style={{ display: "block", fontSize: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 220 }}>
+          {label}
+        </span>
+        {isPrimary && (
+          <span style={{ display: "block", color: "var(--jpgs-muted)", fontSize: 10, marginTop: 1 }}>
+            identity anchor
+          </span>
+        )}
+      </span>
+      <button
+        type="button"
+        aria-label={`Remove ${label}`}
+        onClick={onRemove}
+        style={{
+          width: 22,
+          height: 22,
+          borderRadius: 6,
+          border: "1px solid rgba(255,255,255,0.08)",
+          background: "rgba(255,255,255,0.04)",
+          color: "var(--jpgs-muted)",
+          cursor: "pointer",
+          lineHeight: 1,
+        }}
+      >
+        ×
+      </button>
+    </span>
+  );
+}
+
+function WalletSourceNotices({
+  sources,
+  onRemove,
+}: {
+  sources: SourceWalletMetadata[];
+  onRemove?: (source: SourceWalletMetadata) => void;
+}) {
+  return (
+    <div style={{ display: "grid", gap: 6 }}>
+      {sources.map((source) => (
+        <div
+          key={source.id}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+            color: "var(--jpgs-muted)",
+            fontSize: 12,
+            lineHeight: 1.5,
+            margin: 0,
+          }}
+        >
+          <span>{sourceLabel(source)} was not included: {source.error || "This wallet could not be read."}</span>
+          {onRemove && (
+            <button
+              type="button"
+              onClick={() => onRemove(source)}
+              style={{
+                border: "1px solid var(--jpgs-border)",
+                borderRadius: 6,
+                background: "transparent",
+                color: "var(--jpgs-muted)",
+                cursor: "pointer",
+                fontSize: 11,
+                padding: "3px 6px",
+              }}
+            >
+              Remove
+            </button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function buildWalletRead(profile: WalletReadResponse): WalletReadCopy {
+  const subject = profile.walletCount && profile.walletCount > 1 ? "This wallet set" : "This wallet";
   const signalPhrases = profile.tasteSignals
     .slice()
     .sort((a, b) => b.nftCount - a.nftCount)
@@ -520,15 +824,15 @@ function buildWalletRead(profile: WalletReadResponse): WalletReadCopy {
 
   let headline: string;
   if (signalPhrases.length > 1) {
-    headline = `This wallet reads like a collection pattern around ${formatList(signalPhrases)}.`;
+    headline = `${subject} reads like a collection pattern around ${formatList(signalPhrases)}.`;
   } else if (signalPhrases.length === 1) {
-    headline = `This wallet leans toward ${signalPhrases[0]}.`;
+    headline = `${subject} leans toward ${signalPhrases[0]}.`;
   } else if (fallbackCollections.length > 1) {
-    headline = `This wallet appears clustered around ${formatList(fallbackCollections)}.`;
+    headline = `${subject} appears clustered around ${formatList(fallbackCollections)}.`;
   } else if (fallbackCollections.length === 1) {
-    headline = `This wallet appears centered on ${fallbackCollections[0]}.`;
+    headline = `${subject} appears centered on ${fallbackCollections[0]}.`;
   } else {
-    headline = "This wallet has a sparse visible collection pattern.";
+    headline = `${subject} has a sparse visible collection pattern.`;
   }
 
   const body =
@@ -536,7 +840,7 @@ function buildWalletRead(profile: WalletReadResponse): WalletReadCopy {
       ? `The clearest proof is the repetition across ${formatList(proofCollections)}${
           hasMoreCollections ? ", and other visible collection clusters" : ""
         }.`
-      : "There is not enough visible collection data to make a stronger read yet.";
+      : "There is not enough visible collection data to make a more specific read yet.";
 
   return { headline, body };
 }
@@ -568,14 +872,18 @@ function WalletHeader({ profile }: { profile: WalletReadResponse }) {
   const supportedChainNote = profile.debug?.chainsChecked.length
     ? `Across supported chains: ${profile.debug.chainsChecked.join(", ")}.`
     : "Across supported chains.";
+  const walletCount = profile.walletCount ?? 1;
+  const walletLine = walletCount > 1 ? (profile.shortWallets ?? [profile.shortWallet]).join(", ") : profile.shortWallet;
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-        <div>
-          <p style={eyebrowStyle}>Wallet</p>
-          <h2 style={{ ...panelTitleStyle, fontFamily: "var(--font-geist-mono)" }}>{profile.shortWallet}</h2>
-          <p style={{ ...mutedTextStyle, fontSize: 12, wordBreak: "break-all" }}>{profile.wallet}</p>
+        <div style={{ minWidth: 0 }}>
+          <p style={eyebrowStyle}>{walletCount > 1 ? "Wallet set" : "Wallet"}</p>
+          <h2 style={{ ...panelTitleStyle, fontFamily: "var(--font-geist-mono)" }}>{walletLine}</h2>
+          <p style={{ ...mutedTextStyle, fontSize: 12, wordBreak: "break-all" }}>
+            {walletCount > 1 ? `${walletCount} wallets included in one read.` : profile.wallet}
+          </p>
         </div>
         <div style={{ display: "flex", gap: 10 }}>
           <Metric label="NFTs read" value={profile.nftCount} />
@@ -583,6 +891,11 @@ function WalletHeader({ profile }: { profile: WalletReadResponse }) {
         </div>
       </div>
       <p style={{ ...mutedTextStyle, fontSize: 12 }}>{supportedChainNote}</p>
+      {profile.dedupe && profile.dedupe.duplicateNftCount > 0 && (
+        <p style={{ ...mutedTextStyle, fontSize: 12 }}>
+          Duplicate NFTs across included wallets were counted once.
+        </p>
+      )}
       {isCappedRead && (
         <p style={{ ...mutedTextStyle, fontSize: 12 }}>
           This read is based on the first {maxVisibleNfts} visible NFTs returned by the current source.
