@@ -487,7 +487,6 @@ export default function WalletReadPage() {
                   <WalletChip
                     key={source.id}
                     source={source}
-                    isPrimary={index === 0}
                     onRemove={() => removeWallet(source.address || source.input)}
                   />
                 ))}
@@ -550,7 +549,13 @@ export default function WalletReadPage() {
 
         {state === "empty" && profile && (
           <Panel>
-            <WalletHeader profile={profile} readLabel={activeReadLabel} walletSet={walletSet} activeView={activeView} />
+            <WalletHeader
+              profile={profile}
+              sourceWallets={includedSources}
+              readLabel={activeReadLabel}
+              walletSet={walletSet}
+              activeView={activeView}
+            />
             <div style={{ borderTop: "1px solid var(--jpgs-border)", marginTop: 22, paddingTop: 22 }}>
               <h2 style={panelTitleStyle}>No visible JPGs found.</h2>
               <p style={mutedTextStyle}>
@@ -565,7 +570,13 @@ export default function WalletReadPage() {
         {state === "success" && profile && (
           <div style={{ display: "grid", gap: 18 }}>
             <Panel>
-              <WalletHeader profile={profile} readLabel={activeReadLabel} walletSet={walletSet} activeView={activeView} />
+              <WalletHeader
+                profile={profile}
+                sourceWallets={includedSources}
+                readLabel={activeReadLabel}
+                walletSet={walletSet}
+                activeView={activeView}
+              />
             </Panel>
 
             <Panel>
@@ -759,19 +770,6 @@ function readLabelForView(walletInputs: string[], activeView: ActiveWalletView):
   return "Wallet Read";
 }
 
-function readDetailForView(
-  profile: WalletReadResponse,
-  walletInputs: string[],
-  activeView: ActiveWalletView,
-): string {
-  if (walletInputs.length > 1 && activeView !== "combined") {
-    return `Selected wallet from ${walletInputs.length} included wallets.`;
-  }
-
-  const walletCount = profile.walletCount ?? 1;
-  return walletCount > 1 ? `${walletCount} wallets included in one read.` : profile.wallet;
-}
-
 function updateWalletUrl(inputs: string[]) {
   const params = new URLSearchParams();
   normalizeWalletInputs(inputs).forEach((input) => params.append("wallet", input));
@@ -786,6 +784,71 @@ function shortWallet(wallet?: string): string {
 
 function sourceLabel(source: SourceWalletMetadata): string {
   return source.displayName || source.ens || source.username || source.shortWallet || source.address || source.input;
+}
+
+function includedSourceWallets(profile: WalletReadResponse): SourceWalletMetadata[] {
+  const sources = profile.sourceWallets ?? [];
+  const includedSources = sources.filter((source) => source.status === "included");
+  return includedSources.length > 0 ? includedSources : sources;
+}
+
+function activeSourceForView(
+  profile: WalletReadResponse,
+  walletSet: string[],
+  activeView: ActiveWalletView,
+): SourceWalletMetadata | undefined {
+  const sources = includedSourceWallets(profile);
+  if (activeView === "combined") return sources[0];
+
+  return (
+    sources.find((source) =>
+      [source.input, source.address, source.shortWallet]
+        .filter((value): value is string => Boolean(value?.trim()))
+        .some((value) => sameWalletInput(value, activeView)),
+    ) ??
+    sources.find((source) => walletSet.some((input) => sameWalletInput(source.input, input))) ??
+    sources[0]
+  );
+}
+
+function sourceIdentityLabel(source?: SourceWalletMetadata, fallback?: string): string {
+  return (
+    source?.displayName ||
+    source?.ens ||
+    source?.username ||
+    source?.shortWallet ||
+    shortWallet(source?.address) ||
+    source?.address ||
+    source?.input ||
+    fallback ||
+    ""
+  );
+}
+
+function sourceIdentitySecondary(source?: SourceWalletMetadata, fallback?: string): string {
+  if (!source) return fallback || "";
+
+  const proof = source.shortWallet || shortWallet(source.address);
+  const handle = source.ens || source.username;
+  if (handle && proof) return `${handle} · ${proof}`;
+  return handle || proof || source.address || source.input || fallback || "";
+}
+
+function sourceInitials(source?: SourceWalletMetadata): string {
+  const label = sourceIdentityLabel(source, "??");
+  const words = label
+    .replace(/^0x/i, "")
+    .split(/[\s._-]+/)
+    .filter(Boolean);
+  const initials = words.length > 1 ? `${words[0][0]}${words[1][0]}` : label.slice(0, 2);
+  return initials.toUpperCase();
+}
+
+function addressProofLine(sources: SourceWalletMetadata[]): string {
+  return sources
+    .map((source) => source.shortWallet || shortWallet(source.address) || source.address || source.input)
+    .filter(Boolean)
+    .join(" + ");
 }
 
 function formatSuggestionHandle(suggestion: WalletSuggestion): string {
@@ -827,11 +890,9 @@ function SuggestionAvatar({ suggestion }: { suggestion: WalletSuggestion }) {
 
 function WalletChip({
   source,
-  isPrimary,
   onRemove,
 }: {
   source: SourceWalletMetadata;
-  isPrimary: boolean;
   onRemove: () => void;
 }) {
   const label = sourceLabel(source);
@@ -855,11 +916,6 @@ function WalletChip({
         <span style={{ display: "block", fontSize: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 220 }}>
           {label}
         </span>
-        {isPrimary && (
-          <span style={{ display: "block", color: "var(--jpgs-muted)", fontSize: 10, marginTop: 1 }}>
-            identity anchor
-          </span>
-        )}
       </span>
       <button
         type="button"
@@ -988,7 +1044,7 @@ function WalletViewControls({
         })}
       </div>
       <p style={{ ...mutedTextStyle, fontSize: 12 }}>
-        Combined reads included wallets as one visible collection set. Individual reads isolate one wallet.
+        Combined reads treat included wallets as one visible collection set. Individual reads isolate one wallet.
       </p>
     </div>
   );
@@ -1055,17 +1111,35 @@ function WalletReadSummary({ profile }: { profile: WalletReadResponse }) {
   );
 }
 
+const WALLET_HEADER_BLOCK_SIZE = 90;
+
 function WalletHeader({
   profile,
+  sourceWallets,
   readLabel,
   walletSet,
   activeView,
 }: {
   profile: WalletReadResponse;
+  sourceWallets: SourceWalletMetadata[];
   readLabel: string;
   walletSet: string[];
   activeView: ActiveWalletView;
 }) {
+  const identityProfile = sourceWallets.length > 0 ? { ...profile, sourceWallets } : profile;
+  const sources = includedSourceWallets(identityProfile);
+  const activeSource = activeSourceForView(identityProfile, walletSet, activeView);
+  const sourceWalletCount = profile.includedWalletCount ?? profile.walletCount ?? sources.length;
+  const walletCount = sourceWalletCount > 0 ? sourceWalletCount : 1;
+  const identityTitle = sourceIdentityLabel(activeSource, profile.shortWallet || profile.wallet);
+  const secondaryIdentity = sourceIdentitySecondary(activeSource, profile.shortWallet || profile.wallet);
+  const proofLine = addressProofLine(sources);
+  const detailLine =
+    walletSet.length > 1 && activeView !== "combined"
+      ? `Selected wallet from ${walletSet.length} included wallets.`
+      : walletCount > 1
+        ? `Includes ${walletCount} wallets${proofLine ? ` · ${proofLine}` : ""}`
+        : "";
   const isCappedRead = profile.debug
     ? !profile.debug.complete || profile.debug.stoppedReason === "max_reached"
     : false;
@@ -1073,30 +1147,43 @@ function WalletHeader({
   const supportedChainNote = profile.debug?.chainsChecked.length
     ? `Across supported chains: ${profile.debug.chainsChecked.join(", ")}.`
     : "Across supported chains.";
-  const walletCount = profile.walletCount ?? 1;
-  const walletLine = walletCount > 1 ? (profile.shortWallets ?? [profile.shortWallet]).join(", ") : profile.shortWallet;
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-        <div style={{ minWidth: 0 }}>
-          <p style={eyebrowStyle}>{readLabel}</p>
-          <h2 style={{ ...panelTitleStyle, fontFamily: "var(--font-geist-mono)" }}>{walletLine}</h2>
-          <p style={{ ...mutedTextStyle, fontSize: 12, wordBreak: "break-all" }}>
-            {readDetailForView(profile, walletSet, activeView)}
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: 10 }}>
-          <Metric label="JPGs read" value={profile.nftCount} />
-          <Metric label="Collections" value={profile.collectionCount} />
+      <div>
+        <p style={eyebrowStyle}>{readLabel}</p>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-end", flexWrap: "wrap" }}>
+          <div style={{ minWidth: 0, display: "flex", gap: 12, alignItems: "flex-end", flex: "1 1 360px" }}>
+            <SourceAvatar source={activeSource} size={WALLET_HEADER_BLOCK_SIZE} />
+            <div style={{ minWidth: 0 }}>
+              <h2
+                style={{
+                  ...panelTitleStyle,
+                  overflowWrap: "anywhere",
+                  textWrap: "balance",
+                }}
+              >
+                {identityTitle}
+              </h2>
+              {secondaryIdentity && (
+                <p style={{ ...mutedTextStyle, fontSize: 12, overflowWrap: "anywhere" }}>
+                  {secondaryIdentity}
+                </p>
+              )}
+              {detailLine && (
+                <p style={{ ...mutedTextStyle, fontSize: 12, overflowWrap: "anywhere", marginTop: 2 }}>
+                  {detailLine}
+                </p>
+              )}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+            <Metric label="JPGs read" value={profile.nftCount} />
+            <Metric label="Collections" value={profile.collectionCount} />
+          </div>
         </div>
       </div>
       <p style={{ ...mutedTextStyle, fontSize: 12 }}>{supportedChainNote}</p>
-      {profile.dedupe && profile.dedupe.duplicateNftCount > 0 && (
-        <p style={{ ...mutedTextStyle, fontSize: 12 }}>
-          Duplicate NFTs across included wallets were counted once.
-        </p>
-      )}
       {isCappedRead && (
         <p style={{ ...mutedTextStyle, fontSize: 12 }}>
           This read is based on the first {maxVisibleNfts} visible NFTs returned by the current source.
@@ -1106,9 +1193,62 @@ function WalletHeader({
   );
 }
 
+function SourceAvatar({ source, size }: { source?: SourceWalletMetadata; size: number }) {
+  if (source?.avatarUrl) {
+    return (
+      <img
+        src={source.avatarUrl}
+        alt=""
+        width={size}
+        height={size}
+        style={{
+          width: size,
+          height: size,
+          flex: "0 0 auto",
+          objectFit: "cover",
+          borderRadius: 8,
+          background: "rgba(255,255,255,0.06)",
+        }}
+      />
+    );
+  }
+
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        width: size,
+        height: size,
+        flex: "0 0 auto",
+        borderRadius: 8,
+        display: "grid",
+        placeItems: "center",
+        background: "rgba(149,117,255,0.12)",
+        color: "var(--jpgs-accent)",
+        fontSize: 20,
+        fontFamily: "var(--font-geist-mono)",
+      }}
+    >
+      {sourceInitials(source)}
+    </span>
+  );
+}
+
 function Metric({ label, value }: { label: string; value: number }) {
   return (
-    <div style={{ minWidth: 108, border: "1px solid var(--jpgs-border)", borderRadius: 8, padding: "12px 14px" }}>
+    <div
+      style={{
+        minWidth: 108,
+        minHeight: WALLET_HEADER_BLOCK_SIZE,
+        boxSizing: "border-box",
+        border: "1px solid var(--jpgs-border)",
+        borderRadius: 8,
+        padding: "12px 14px",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "center",
+      }}
+    >
       <p style={{ color: "var(--jpgs-muted)", fontSize: 11, marginBottom: 6 }}>{label}</p>
       <p style={{ fontSize: 22, fontWeight: 500 }}>{value}</p>
     </div>
