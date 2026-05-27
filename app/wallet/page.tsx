@@ -11,6 +11,22 @@ type TopCollection = {
   openseaUrl: string;
 };
 
+type TopArtist = {
+  key: string;
+  name: string;
+  ownedCount: number;
+  openseaCreatedUrl?: string;
+  collections: Array<{ slug: string; name: string; count: number }>;
+  samplePieces: Array<{
+    name: string;
+    collectionSlug: string;
+    collectionName: string;
+    imageUrl?: string;
+    openseaUrl?: string;
+  }>;
+  sourceFields: string[];
+};
+
 type TasteSignal = {
   category: string;
   label: string;
@@ -40,6 +56,8 @@ type WalletReadResponse = {
   nftCount: number;
   collectionCount: number;
   topCollections: TopCollection[];
+  similarCollectorCollections?: TopCollection[];
+  topArtists?: TopArtist[];
   tasteSignals: TasteSignal[];
   wallets?: string[];
   shortWallets?: string[];
@@ -86,9 +104,34 @@ type WalletSuggestion = {
   source: string;
 };
 
+type SimilarCollector = {
+  address: string;
+  shortWallet: string;
+  displayName?: string;
+  avatarUrl?: string;
+  openseaProfileUrl: string;
+  matchedCollections: Array<{
+    slug: string;
+    name: string;
+    image_url?: string;
+    heldCount: number;
+  }>;
+  sharedCollectionCount: number;
+  totalHeldFromSelected: number;
+  reason: string;
+};
+
+type SimilarCollectorsResponse = {
+  collectors?: SimilarCollector[];
+};
+
 const SAMPLE_WALLET = "0x16f3d833bb91aebb5066884501242d8b3c3b5e61";
 const WALLET_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 const MAX_WALLETS = 2;
+const SHOW_TOP_ARTISTS = false;
+const SIMILAR_COLLECTOR_COLLECTION_LIMIT = 22;
+const SIMILAR_COLLECTOR_DISPLAY_LIMIT = 5;
+const MIN_SIMILAR_COLLECTOR_SHARED_COLLECTIONS = 2;
 const SUPPORTED_CHAIN_COPY = "Visible across supported chains: ethereum, base, polygon, arbitrum, optimism, zora.";
 
 type WalletReadCopy = {
@@ -122,6 +165,7 @@ export default function WalletReadPage() {
   const [suggestions, setSuggestions] = useState<WalletSuggestion[]>([]);
   const [suggestState, setSuggestState] = useState<SuggestState>("idle");
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [similarCollectors, setSimilarCollectors] = useState<SimilarCollector[]>([]);
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestSeq = useRef(0);
   const didHydrateUrl = useRef(false);
@@ -256,6 +300,53 @@ export default function WalletReadPage() {
       controller.abort();
     };
   }, [wallet, resolvedWallet, walletSet.length]);
+
+  useEffect(() => {
+    const similarCollectorCollections = profile?.similarCollectorCollections ?? profile?.topCollections ?? [];
+
+    if (state !== "success" || !profile || similarCollectorCollections.length < 2) {
+      setSimilarCollectors([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    const sourceWallets = sourceWalletAddressesFromProfile(profile);
+    const collections = similarCollectorCollections
+      .slice(0, SIMILAR_COLLECTOR_COLLECTION_LIMIT)
+      .map((collection) => ({
+        slug: collection.slug,
+        name: collection.name,
+        imageUrl: collection.imageUrl,
+      }));
+
+    setSimilarCollectors([]);
+
+    async function fetchSimilarCollectors() {
+      try {
+        const res = await fetch("/api/wallet/similar-collectors", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({ sourceWallets, collections }),
+        });
+        if (!res.ok) return;
+
+        const data = (await res.json()) as SimilarCollectorsResponse;
+        if (!controller.signal.aborted) {
+          const meaningfulCollectors = (data.collectors ?? [])
+            .filter((collector) => collector.sharedCollectionCount >= MIN_SIMILAR_COLLECTOR_SHARED_COLLECTIONS)
+            .slice(0, SIMILAR_COLLECTOR_DISPLAY_LIMIT);
+          setSimilarCollectors(meaningfulCollectors);
+        }
+      } catch {
+        if (!controller.signal.aborted) setSimilarCollectors([]);
+      }
+    }
+
+    void fetchSimilarCollectors();
+
+    return () => controller.abort();
+  }, [profile, state]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -622,6 +713,17 @@ export default function WalletReadPage() {
                 </div>
               </Panel>
 
+              {SHOW_TOP_ARTISTS && (profile.topArtists?.length ?? 0) > 0 && (
+                <Panel style={supportPanelStyle}>
+                  <SectionHeading title="Top artists" detail="From token artist traits" />
+                  <div style={topArtistGridStyle}>
+                    {profile.topArtists?.map((artist) => (
+                      <TopArtistCard key={artist.key} artist={artist} />
+                    ))}
+                  </div>
+                </Panel>
+              )}
+
               {profile.tasteSignals.length > 0 && (
                 <Panel style={supportPanelStyle}>
                   <SectionHeading title="Taste signals" detail="Grouped from visible metadata" />
@@ -651,6 +753,20 @@ export default function WalletReadPage() {
                   </div>
                 </Panel>
               )}
+
+              {similarCollectors.length > 0 && (
+                <Panel style={supportPanelStyle}>
+                  <SectionHeading
+                    title="Collectors nearby"
+                    detail="Wallets with visible overlap across this wallet’s strongest collection signals."
+                  />
+                  <div style={similarCollectorGridStyle}>
+                    {similarCollectors.map((collector) => (
+                      <SimilarCollectorRow key={collector.address} collector={collector} />
+                    ))}
+                  </div>
+                </Panel>
+              )}
             </div>
           </div>
         )}
@@ -665,6 +781,7 @@ function isWalletReadResponse(data: WalletReadResponse | WalletReadErrorResponse
     typeof data.shortWallet === "string" &&
     typeof data.nftCount === "number" &&
     Array.isArray(data.topCollections) &&
+    (!("topArtists" in data) || Array.isArray(data.topArtists)) &&
     Array.isArray(data.tasteSignals)
   );
 }
@@ -727,6 +844,15 @@ function canonicalWalletInputsFromResponse(profile: WalletReadResponse, fallback
     .filter((input): input is string => Boolean(input?.trim()));
 
   return normalizeWalletInputs(sourceInputs.length > 0 ? sourceInputs : fallbackInputs);
+}
+
+function sourceWalletAddressesFromProfile(profile: WalletReadResponse): string[] {
+  const sourceWallets = (profile.sourceWallets ?? [])
+    .filter((source) => source.status === "included")
+    .map((source) => source.address)
+    .filter((address): address is string => Boolean(address?.trim()));
+
+  return sourceWallets.length > 0 ? sourceWallets : profile.wallets ?? [profile.wallet];
 }
 
 function mergeWalletSources(
@@ -1298,9 +1424,132 @@ function CollectionImage({ collection, size = 56 }: { collection: TopCollection;
     <img
       src={collection.imageUrl}
       alt=""
+      width={size}
+      height={size}
       style={{ width: size, height: size, objectFit: "cover", borderRadius: 8, background: "rgba(255,255,255,0.04)" }}
     />
   );
+}
+
+function SimilarCollectorRow({ collector }: { collector: SimilarCollector }) {
+  const proofCollections = collector.matchedCollections
+    .map((collection) => collection.name)
+    .filter(Boolean)
+    .slice(0, 4);
+  const label = collector.displayName || collector.shortWallet;
+  const initials = label.replace(/^0x/i, "").slice(0, 2).toUpperCase();
+
+  return (
+    <a
+      href={collector.openseaProfileUrl}
+      target="_blank"
+      rel="noreferrer"
+      style={similarCollectorRowStyle}
+    >
+      {collector.avatarUrl ? (
+        <img
+          src={collector.avatarUrl}
+          alt=""
+          width={42}
+          height={42}
+          loading="lazy"
+          style={similarCollectorAvatarStyle}
+        />
+      ) : (
+        <span style={similarCollectorAvatarFallbackStyle} aria-hidden="true">
+          {initials}
+        </span>
+      )}
+      <span style={{ minWidth: 0 }}>
+        <span style={similarCollectorNameStyle}>{label}</span>
+        <span style={similarCollectorReasonStyle}>{collector.reason}</span>
+        {proofCollections.length > 0 && (
+          <span style={similarCollectorProofStyle}>{formatList(proofCollections)}</span>
+        )}
+      </span>
+      <span style={similarCollectorAddressStyle}>{collector.shortWallet}</span>
+    </a>
+  );
+}
+
+function TopArtistCard({ artist }: { artist: TopArtist }) {
+  const proofCollections = artist.collections.map((collection) => collection.name).filter(Boolean).slice(0, 3);
+  const sourceFields = artist.sourceFields.join(", ");
+
+  return (
+    <div style={topArtistCardStyle}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+        <div style={{ minWidth: 0 }}>
+          {artist.openseaCreatedUrl ? (
+            <a
+              href={artist.openseaCreatedUrl}
+              target="_blank"
+              rel="noreferrer"
+              style={topArtistNameLinkStyle}
+            >
+              {artist.name}
+            </a>
+          ) : (
+            <h3 style={topArtistNameStyle}>{artist.name}</h3>
+          )}
+          <p style={{ color: "var(--jpgs-muted)", fontSize: 12, marginTop: 4 }}>
+            {formatPieceCount(artist.ownedCount)} found
+          </p>
+        </div>
+        {artist.samplePieces.length > 0 && (
+          <div style={topArtistThumbsStyle} aria-hidden="true">
+            {artist.samplePieces.slice(0, 3).map((piece) => (
+              <ArtistPieceImage key={`${artist.key}-${piece.openseaUrl ?? piece.name}`} piece={piece} />
+            ))}
+          </div>
+        )}
+      </div>
+      {proofCollections.length > 0 && (
+        <p style={topArtistProofStyle}>
+          Seen in {formatList(proofCollections)}.
+        </p>
+      )}
+      {artist.samplePieces.length > 0 && (
+        <p style={topArtistProofStyle}>
+          Proof pieces: {formatList(artist.samplePieces.map((piece) => piece.name).slice(0, 2))}.
+        </p>
+      )}
+      {sourceFields && (
+        <p style={topArtistSourceStyle}>
+          Source traits: {sourceFields}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ArtistPieceImage({
+  piece,
+}: {
+  piece: TopArtist["samplePieces"][number];
+}) {
+  if (!piece.imageUrl) {
+    return (
+      <span style={artistPieceFallbackStyle}>
+        {piece.name.slice(0, 2).toUpperCase()}
+      </span>
+    );
+  }
+
+  return (
+    <img
+      src={piece.imageUrl}
+      alt=""
+      width={42}
+      height={42}
+      loading="lazy"
+      style={artistPieceImageStyle}
+    />
+  );
+}
+
+function formatPieceCount(count: number): string {
+  return `${count} ${count === 1 ? "piece" : "pieces"}`;
 }
 
 const panelShellStyle: React.CSSProperties = {
@@ -1334,9 +1583,149 @@ const collectionGridStyle: React.CSSProperties = {
   gap: "clamp(12px, 2vw, 16px)",
 };
 
+const topArtistGridStyle: React.CSSProperties = {
+  display: "grid",
+  gap: "clamp(10px, 1.8vw, 12px)",
+};
+
+const topArtistCardStyle: React.CSSProperties = {
+  display: "grid",
+  gap: 10,
+  border: "1px solid var(--jpgs-border)",
+  borderRadius: 8,
+  padding: "14px 16px",
+  background: "rgba(255,255,255,0.018)",
+};
+
+const topArtistNameStyle: React.CSSProperties = {
+  fontSize: 15,
+  fontWeight: 500,
+  lineHeight: 1.3,
+  overflowWrap: "anywhere",
+};
+
+const topArtistNameLinkStyle: React.CSSProperties = {
+  ...topArtistNameStyle,
+  color: "var(--jpgs-text)",
+  textDecorationColor: "rgba(149,117,255,0.55)",
+  textUnderlineOffset: 3,
+};
+
+const topArtistThumbsStyle: React.CSSProperties = {
+  display: "flex",
+  flex: "0 0 auto",
+  justifyContent: "flex-end",
+  minWidth: 42,
+};
+
+const artistPieceImageStyle: React.CSSProperties = {
+  width: 42,
+  height: 42,
+  objectFit: "cover",
+  borderRadius: 8,
+  border: "1px solid rgba(255,255,255,0.08)",
+  background: "rgba(255,255,255,0.04)",
+  marginLeft: -8,
+};
+
+const artistPieceFallbackStyle: React.CSSProperties = {
+  ...artistPieceImageStyle,
+  display: "grid",
+  placeItems: "center",
+  color: "var(--jpgs-accent)",
+  fontSize: 10,
+};
+
+const topArtistProofStyle: React.CSSProperties = {
+  color: "var(--jpgs-muted)",
+  fontSize: 13,
+  lineHeight: 1.55,
+};
+
+const topArtistSourceStyle: React.CSSProperties = {
+  color: "var(--jpgs-muted)",
+  fontSize: 11,
+  lineHeight: 1.45,
+  fontFamily: "var(--font-geist-mono)",
+  opacity: 0.78,
+};
+
 const tasteSignalGridStyle: React.CSSProperties = {
   display: "grid",
   gap: "clamp(10px, 1.8vw, 12px)",
+};
+
+const similarCollectorGridStyle: React.CSSProperties = {
+  display: "grid",
+  gap: "clamp(10px, 1.8vw, 12px)",
+};
+
+const similarCollectorRowStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "42px minmax(0, 1fr) auto",
+  gap: 12,
+  alignItems: "center",
+  border: "1px solid var(--jpgs-border)",
+  borderRadius: 8,
+  padding: "12px 14px",
+  background: "rgba(255,255,255,0.018)",
+  color: "var(--jpgs-text)",
+  textDecoration: "none",
+};
+
+const similarCollectorAvatarStyle: React.CSSProperties = {
+  width: 42,
+  height: 42,
+  objectFit: "cover",
+  borderRadius: 8,
+  background: "rgba(255,255,255,0.04)",
+};
+
+const similarCollectorAvatarFallbackStyle: React.CSSProperties = {
+  ...similarCollectorAvatarStyle,
+  display: "grid",
+  placeItems: "center",
+  color: "var(--jpgs-accent)",
+  background: "rgba(149,117,255,0.12)",
+  fontSize: 12,
+  fontFamily: "var(--font-geist-mono)",
+};
+
+const similarCollectorNameStyle: React.CSSProperties = {
+  display: "block",
+  fontSize: 14,
+  fontWeight: 500,
+  lineHeight: 1.35,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+const similarCollectorReasonStyle: React.CSSProperties = {
+  display: "block",
+  color: "var(--jpgs-muted)",
+  fontSize: 12,
+  lineHeight: 1.45,
+  marginTop: 2,
+};
+
+const similarCollectorProofStyle: React.CSSProperties = {
+  display: "block",
+  color: "var(--jpgs-muted)",
+  fontSize: 12,
+  lineHeight: 1.45,
+  marginTop: 3,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+  opacity: 0.78,
+};
+
+const similarCollectorAddressStyle: React.CSSProperties = {
+  color: "var(--jpgs-muted)",
+  fontFamily: "var(--font-geist-mono)",
+  fontSize: 11,
+  lineHeight: 1.4,
 };
 
 const sectionHeadingStyle: React.CSSProperties = {

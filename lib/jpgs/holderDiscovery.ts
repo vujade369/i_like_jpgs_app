@@ -235,8 +235,10 @@ export async function fetchCollectionHolders(
 
 export async function discoverWalletsForCollections(
   collections: CollectionRef[],
+  options: { maxCollections?: number } = {},
 ): Promise<DiscoveryResult> {
-  const limited = collections.slice(0, MAX_COLLECTIONS_PER_DISCOVERY);
+  const maxCollections = options.maxCollections ?? MAX_COLLECTIONS_PER_DISCOVERY;
+  const limited = collections.slice(0, maxCollections);
 
   const settled = await Promise.allSettled(
     limited.map((col) => fetchCollectionHolders(col.slug)),

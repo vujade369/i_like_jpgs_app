@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { classifyNftTaste, type NormalizedNft } from "@/lib/jpgs/classifyNftTaste";
+import { resolveTopArtists, type TopArtist } from "@/lib/jpgs/resolveTopArtists";
 import { TASTE_CATEGORY_LABELS, type TasteCategory } from "@/lib/jpgs/tasteCategories";
 import {
   fetchCollectionBySlug,
@@ -12,7 +13,8 @@ import {
 const WALLET_RE = /^0x[a-fA-F0-9]{40}$/;
 const MAX_WALLETS = 2;
 const MAX_VISIBLE_NFTS = 3333;
-const MAX_COLLECTIONS_TO_ENRICH = 20;
+const SIMILAR_COLLECTOR_COLLECTION_LIMIT = 22;
+const MAX_COLLECTIONS_TO_ENRICH = SIMILAR_COLLECTOR_COLLECTION_LIMIT;
 const TOP_COLLECTION_LIMIT = 12;
 
 type TopCollection = {
@@ -22,6 +24,12 @@ type TopCollection = {
   imageSource: "collection" | "nft" | "none";
   count: number;
   openseaUrl: string;
+};
+
+type CollectionRow = {
+  slug: string;
+  count: number;
+  firstNftImage?: string;
 };
 
 type TasteSignal = {
@@ -94,6 +102,23 @@ function nftImage(nft: OsWalletNft): string | undefined {
 function nftBalance(nft: OsWalletNft): number {
   const quantity = nft.quantity ?? nft.owners?.[0]?.quantity ?? 1;
   return Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+}
+
+function topCollectionFromRow(
+  row: CollectionRow,
+  enriched: Map<string, OsCollection | null>,
+): TopCollection {
+  const meta = enriched.get(row.slug);
+  const imageUrl = meta?.image_url || row.firstNftImage;
+
+  return {
+    slug: row.slug,
+    name: collectionName(row.slug, meta),
+    imageUrl,
+    imageSource: meta?.image_url ? "collection" : imageUrl ? "nft" : "none",
+    count: row.count,
+    openseaUrl: meta?.opensea_url || `https://opensea.io/collection/${row.slug}`,
+  };
 }
 
 function walletDisplayLabel(source: {
@@ -363,10 +388,7 @@ export async function GET(req: NextRequest) {
   const isSingleWalletRead = includedWallets.length === 1;
   const dedupedNfts = dedupeNfts(allNfts);
   const nftsForRead = isSingleWalletRead ? allNfts : dedupedNfts;
-  const collections = new Map<
-    string,
-    { slug: string; count: number; firstNftImage?: string }
-  >();
+  const collections = new Map<string, CollectionRow>();
 
   // Single-wallet reads preserve the original balance-based API counts.
   // Combined reads count deduped token identities so duplicates across wallets do not inflate the read.
@@ -391,17 +413,14 @@ export async function GET(req: NextRequest) {
   const sortedCollectionRows = Array.from(collections.values()).sort((a, b) => b.count - a.count);
   const enriched = await enrichCollections(sortedCollectionRows.map((row) => row.slug));
 
-  const topCollections: TopCollection[] = sortedCollectionRows.slice(0, TOP_COLLECTION_LIMIT).map((row) => {
-    const meta = enriched.get(row.slug);
-    const imageUrl = meta?.image_url || row.firstNftImage;
-    return {
-      slug: row.slug,
-      name: collectionName(row.slug, meta),
-      imageUrl,
-      imageSource: meta?.image_url ? "collection" : imageUrl ? "nft" : "none",
-      count: row.count,
-      openseaUrl: meta?.opensea_url || `https://opensea.io/collection/${row.slug}`,
-    };
+  const topCollections: TopCollection[] = sortedCollectionRows
+    .slice(0, TOP_COLLECTION_LIMIT)
+    .map((row) => topCollectionFromRow(row, enriched));
+  const similarCollectorCollections: TopCollection[] = sortedCollectionRows
+    .slice(0, SIMILAR_COLLECTOR_COLLECTION_LIMIT)
+    .map((row) => topCollectionFromRow(row, enriched));
+  const topArtists: TopArtist[] = resolveTopArtists(nftsForRead, countNft, {
+    collectionNameForSlug: (slug) => collectionName(slug, enriched.get(slug)),
   });
 
   const signalBuckets = new Map<
@@ -458,6 +477,8 @@ export async function GET(req: NextRequest) {
     nftCount,
     collectionCount: collections.size,
     topCollections,
+    similarCollectorCollections,
+    topArtists,
     tasteSignals,
     wallets,
     shortWallets,
@@ -498,6 +519,10 @@ export async function GET(req: NextRequest) {
             maxVisibleNfts: MAX_VISIBLE_NFTS,
             includeHidden: false,
             enrichedCollections: enriched.size,
+            topCollectionsReturned: topCollections.length,
+            topCollectionLimit: TOP_COLLECTION_LIMIT,
+            similarCollectorCollectionsReturned: similarCollectorCollections.length,
+            similarCollectorCollectionLimit: SIMILAR_COLLECTOR_COLLECTION_LIMIT,
             maxWallets: MAX_WALLETS,
             ignoredWalletInputs: ignoredInputs.length,
             walletFetches: fetchRows.map((row) =>
