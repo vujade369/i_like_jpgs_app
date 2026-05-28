@@ -108,10 +108,11 @@ function ResultsInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const sourceWallets = wallets;
   const visibleWallets = hideInstitutional
-    ? wallets.filter((wallet) => !looksInstitutionalCollector(wallet))
-    : wallets;
-  const hiddenInstitutionalCount = wallets.length - visibleWallets.length;
+    ? sourceWallets.filter((wallet) => !looksInstitutionalCollector(wallet))
+    : sourceWallets;
+  const hiddenInstitutionalCount = sourceWallets.length - visibleWallets.length;
 
   return (
     <>
@@ -296,7 +297,7 @@ function ResultsInner() {
 function CollectorCard({ wallet }: { wallet: CollectorWallet }) {
   const [avatarFailed, setAvatarFailed] = useState(false);
   const shortWallet = shortAddress(wallet.address);
-  const label = wallet.ens || wallet.displayName || wallet.username || wallet.openseaUsername || shortWallet;
+  const label = wallet.ens || wallet.displayName || wallet.username || shortWallet;
   const username = wallet.username || wallet.openseaUsername;
   const secondaryIdentity = username ? `${username} · ${shortWallet}` : shortWallet;
   const avatarSrc = avatarFailed

@@ -421,10 +421,11 @@ export default function WalletReadPage() {
   const sourceNotices = sourceWallets.filter((source) => source.status !== "included");
   const atWalletLimit = walletSet.length >= MAX_WALLETS;
   const activeReadLabel = readLabelForView(walletSet, activeView);
-  const visibleSimilarCollectors = hideInstitutional
-    ? similarCollectors.filter((collector) => !looksInstitutionalCollector(collector))
-    : similarCollectors;
-  const hiddenInstitutionalCollectorCount = similarCollectors.length - visibleSimilarCollectors.length;
+  const sourceCollectors = similarCollectors;
+  const visibleCollectors = hideInstitutional
+    ? sourceCollectors.filter((collector) => !looksInstitutionalCollector(collector))
+    : sourceCollectors;
+  const hiddenInstitutionalCollectorCount = sourceCollectors.length - visibleCollectors.length;
 
   return (
     <main className="min-h-screen" style={{ background: "var(--jpgs-bg)", color: "var(--jpgs-text)" }}>
@@ -799,7 +800,7 @@ export default function WalletReadPage() {
                     </p>
                   )}
                   <div style={similarCollectorGridStyle}>
-                    {visibleSimilarCollectors.map((collector) => (
+                    {visibleCollectors.map((collector) => (
                       <SimilarCollectorCard key={collector.address} collector={collector} />
                     ))}
                   </div>
