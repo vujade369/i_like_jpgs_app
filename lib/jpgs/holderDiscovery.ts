@@ -1,9 +1,18 @@
+import {
+  fetchAccount,
+  fetchResolvedAccount,
+  normalizeOpenSeaAccountIdentity,
+  type OpenSeaAccountIdentity,
+  type OsAccount,
+} from "./opensea";
+
 const OPENSEA_BASE = "https://api.opensea.io/api/v2";
 const HOLDER_PAGE_SIZE = 100;
 const MAX_HOLDERS_PER_COLLECTION = 10_000;
 const MAX_COLLECTIONS_PER_DISCOVERY = 5;
 const HOLDER_FETCH_TIMEOUT_MS = 25_000;
 const CACHE_TTL_MS = 20 * 60 * 1000;
+const ACCOUNT_PROFILE_CACHE_TTL_MS = 15 * 60 * 1000;
 
 export const ACCOUNT_HYDRATION_LIMIT = 10;
 export const ACCOUNT_HYDRATION_CONCURRENCY = 2;
@@ -39,6 +48,11 @@ type HolderCacheEntry = {
   lastPageFirstHolder: string | undefined;
   cursorChanged: boolean;
   requestUrls: string[];
+};
+
+type AccountIdentityCacheEntry = {
+  fetchedAt: number;
+  identity: OpenSeaAccountIdentity;
 };
 
 export type MatchedCollection = {
@@ -84,9 +98,42 @@ export type DiscoveryResult = {
   };
 };
 
+export type AccountHydrationOutcome = {
+  address: string;
+  outcome: "ok" | "fail" | "cached" | "skip";
+  hasAvatar: boolean;
+  hasEns: boolean;
+  hasUsername: boolean;
+};
+
+export type AccountHydrationSummary = {
+  ok: number;
+  fail: number;
+  cached: number;
+  skip: number;
+  withAvatar: number;
+  withEns: number;
+  withUsername: number;
+  failures: string[];
+  limit: number;
+  concurrency: number;
+};
+
+export type HydratedAccountIdentity = OpenSeaAccountIdentity & {
+  address: string;
+  hydrated: boolean;
+  cached: boolean;
+};
+
+export type AccountHydrationResult = {
+  identities: Map<string, HydratedAccountIdentity>;
+  summary: AccountHydrationSummary;
+};
+
 // ─── In-memory cache ──────────────────────────────────────────────────────────
 
 const holderCache = new Map<string, HolderCacheEntry>();
+const accountIdentityCache = new Map<string, AccountIdentityCacheEntry>();
 
 function getCached(slug: string): HolderCacheEntry | null {
   const entry = holderCache.get(slug);
@@ -96,6 +143,188 @@ function getCached(slug: string): HolderCacheEntry | null {
     return null;
   }
   return entry;
+}
+
+async function runConcurrently<T>(
+  tasks: Array<() => Promise<T>>,
+  concurrency: number,
+): Promise<T[]> {
+  const results: T[] = [];
+  let idx = 0;
+
+  async function worker() {
+    while (idx < tasks.length) {
+      const i = idx++;
+      results[i] = await tasks[i]();
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, tasks.length) }, worker));
+  return results;
+}
+
+async function getAccountIdentity(
+  address: string,
+): Promise<{ identity: OpenSeaAccountIdentity; outcome: "ok" | "fail" | "cached" }> {
+  const cacheKey = address.toLowerCase();
+  const cached = accountIdentityCache.get(cacheKey);
+
+  if (cached) {
+    if (Date.now() - cached.fetchedAt <= ACCOUNT_PROFILE_CACHE_TTL_MS) {
+      return { identity: cached.identity, outcome: "cached" };
+    }
+    accountIdentityCache.delete(cacheKey);
+  }
+
+  const account = await fetchAccount(address);
+  const resolvedAccount = hasReadableAccountName(account) && hasAccountEns(account)
+    ? null
+    : await fetchResolvedAccount(address);
+  const identity = normalizeOpenSeaAccountIdentity(address, account, resolvedAccount);
+  const shouldCache = hasSuccessfulIdentity(identity, account, resolvedAccount);
+
+  if (shouldCache) {
+    accountIdentityCache.set(cacheKey, {
+      fetchedAt: Date.now(),
+      identity,
+    });
+  }
+
+  return { identity, outcome: shouldCache ? "ok" : "fail" };
+}
+
+function hasReadableAccountName(account?: OsAccount | null): boolean {
+  return Boolean(
+    account?.username?.trim() ||
+      account?.display_name?.trim() ||
+      account?.displayName?.trim() ||
+      account?.name?.trim() ||
+      account?.ens?.trim() ||
+      account?.ens_name?.trim() ||
+      account?.account?.username?.trim() ||
+      account?.account?.display_name?.trim() ||
+      account?.account?.displayName?.trim() ||
+      account?.account?.name?.trim() ||
+      account?.account?.ens?.trim() ||
+      account?.account?.ens_name?.trim() ||
+      account?.user?.username?.trim() ||
+      account?.user?.display_name?.trim() ||
+      account?.user?.displayName?.trim() ||
+      account?.user?.name?.trim() ||
+      account?.user?.ens?.trim() ||
+      account?.user?.ens_name?.trim(),
+  );
+}
+
+function hasAccountAvatar(account?: OsAccount | null): boolean {
+  return Boolean(
+    account?.profile_image_url?.trim() ||
+      account?.image_url?.trim() ||
+      account?.avatar_url?.trim() ||
+      account?.avatar?.trim() ||
+      account?.account?.profile_image_url?.trim() ||
+      account?.account?.image_url?.trim() ||
+      account?.account?.avatar_url?.trim() ||
+      account?.account?.avatar?.trim() ||
+      account?.user?.profile_image_url?.trim() ||
+      account?.user?.image_url?.trim() ||
+      account?.user?.avatar_url?.trim() ||
+      account?.user?.avatar?.trim(),
+  );
+}
+
+function hasAccountEns(account?: OsAccount | null): boolean {
+  return Boolean(
+    account?.ens?.trim() ||
+      account?.ens_name?.trim() ||
+      account?.account?.ens?.trim() ||
+      account?.account?.ens_name?.trim() ||
+      account?.user?.ens?.trim() ||
+      account?.user?.ens_name?.trim(),
+  );
+}
+
+function hasSuccessfulIdentity(
+  identity: OpenSeaAccountIdentity,
+  account?: OsAccount | null,
+  resolvedAccount?: OsAccount | null,
+): boolean {
+  return Boolean(
+    identity.username ||
+      identity.ens ||
+      identity.avatarUrl ||
+      hasReadableAccountName(account) ||
+      hasReadableAccountName(resolvedAccount) ||
+      hasAccountAvatar(account) ||
+      hasAccountAvatar(resolvedAccount),
+  );
+}
+
+function hydrationSummary(
+  log: AccountHydrationOutcome[],
+  limit: number,
+  concurrency: number,
+): AccountHydrationSummary {
+  return {
+    ok: log.filter((entry) => entry.outcome === "ok").length,
+    fail: log.filter((entry) => entry.outcome === "fail").length,
+    cached: log.filter((entry) => entry.outcome === "cached").length,
+    skip: log.filter((entry) => entry.outcome === "skip").length,
+    withAvatar: log.filter((entry) => entry.hasAvatar).length,
+    withEns: log.filter((entry) => entry.hasEns).length,
+    withUsername: log.filter((entry) => entry.hasUsername).length,
+    failures: log.filter((entry) => entry.outcome === "fail").map((entry) => entry.address),
+    limit,
+    concurrency,
+  };
+}
+
+export async function hydrateAccountIdentities(
+  addresses: string[],
+  options: {
+    limit?: number;
+    concurrency?: number;
+  } = {},
+): Promise<AccountHydrationResult> {
+  const limit = options.limit ?? ACCOUNT_HYDRATION_LIMIT;
+  const concurrency = options.concurrency ?? ACCOUNT_HYDRATION_CONCURRENCY;
+  const limitedAddresses = addresses.slice(0, limit);
+  const skippedAddresses = addresses.slice(limit);
+  const log: AccountHydrationOutcome[] = skippedAddresses.map((address) => ({
+    address,
+    outcome: "skip",
+    hasAvatar: false,
+    hasEns: false,
+    hasUsername: false,
+  }));
+
+  const hydrated = await runConcurrently(
+    limitedAddresses.map((address) => async () => {
+      const { identity, outcome } = await getAccountIdentity(address);
+      const entry: HydratedAccountIdentity = {
+        address,
+        ...identity,
+        hydrated: outcome !== "fail",
+        cached: outcome === "cached",
+      };
+
+      log.push({
+        address,
+        outcome,
+        hasAvatar: Boolean(identity.avatarUrl),
+        hasEns: Boolean(identity.ens),
+        hasUsername: Boolean(identity.username),
+      });
+
+      return entry;
+    }),
+    concurrency,
+  );
+
+  return {
+    identities: new Map(hydrated.map((identity) => [identity.address.toLowerCase(), identity])),
+    summary: hydrationSummary(log, limit, concurrency),
+  };
 }
 
 // ─── Holder fetching ──────────────────────────────────────────────────────────

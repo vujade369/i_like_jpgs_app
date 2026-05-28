@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   discoverWalletsForCollections,
+  hydrateAccountIdentities,
   type CollectionRef,
 } from "@/lib/jpgs/holderDiscovery";
-import { fetchAccount } from "@/lib/jpgs/opensea";
 
 const MAX_COLLECTIONS = 22;
 const MAX_COLLECTORS = 5;
@@ -97,41 +97,33 @@ export async function POST(req: NextRequest) {
     ),
   );
 
-  const collectors = await Promise.all(
-    matches.map(async (wallet) => {
-      const profile = await fetchAccount(wallet.address);
-      const displayName =
-        profile?.display_name?.trim() ||
-        profile?.username?.trim() ||
-        profile?.ens?.trim() ||
-        profile?.ens_name?.trim() ||
-        shortWallet(wallet.address);
-      const avatarUrl =
-        profile?.profile_image_url ||
-        profile?.image_url ||
-        profile?.avatar_url ||
-        profile?.avatar ||
-        undefined;
-      const openseaProfileUrl = profile?.username
-        ? `https://opensea.io/${profile.username}`
-        : `https://opensea.io/${wallet.address}`;
-
-      return {
-        address: wallet.address,
-        shortWallet: shortWallet(wallet.address),
-        displayName,
-        avatarUrl,
-        openseaProfileUrl,
-        matchedCollections: wallet.matchedCollections,
-        sharedCollectionCount: wallet.matchedCollectionCount,
-        totalHeldFromSelected: wallet.totalHeldFromSelected,
-        reason:
-          wallet.matchedCollectionCount === 1
-            ? "Seen across 1 shared collection"
-            : `Seen across ${wallet.matchedCollectionCount} shared collections`,
-      };
-    }),
+  const hydration = await hydrateAccountIdentities(
+    matches.map((wallet) => wallet.address),
+    { limit: MAX_COLLECTORS },
   );
+
+  const collectors = matches.map((wallet) => {
+    const identity = hydration.identities.get(wallet.address.toLowerCase());
+    const displayName = identity?.displayName || shortWallet(wallet.address);
+
+    return {
+      address: wallet.address,
+      shortWallet: shortWallet(wallet.address),
+      displayName,
+      username: identity?.username,
+      ens: identity?.ens,
+      avatarUrl: identity?.avatarUrl,
+      openseaProfileUrl: identity?.openseaProfileUrl ?? `https://opensea.io/${wallet.address}`,
+      identitySource: identity?.identitySource,
+      matchedCollections: wallet.matchedCollections,
+      sharedCollectionCount: wallet.matchedCollectionCount,
+      totalHeldFromSelected: wallet.totalHeldFromSelected,
+      reason:
+        wallet.matchedCollectionCount === 1
+          ? "Seen across 1 shared collection"
+          : `Seen across ${wallet.matchedCollectionCount} shared collections`,
+    };
+  });
 
   return NextResponse.json({
     collectors,
@@ -148,6 +140,7 @@ export async function POST(req: NextRequest) {
             collectionsCompleted: discovery.debug.collectionsFetched.filter((collection) => collection.complete).length,
             collectionsContributingToResults: contributingCollectionSlugs.length,
             contributingCollectionSlugs,
+            hydrationSummary: hydration.summary,
             partialCollections: discovery.debug.collectionsFetched
               .filter((collection) => !collection.complete)
               .map((collection) => ({

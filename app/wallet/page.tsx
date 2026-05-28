@@ -108,8 +108,11 @@ type SimilarCollector = {
   address: string;
   shortWallet: string;
   displayName?: string;
+  username?: string;
+  ens?: string;
   avatarUrl?: string;
   openseaProfileUrl: string;
+  identitySource?: string;
   matchedCollections: Array<{
     slug: string;
     name: string;
@@ -762,7 +765,7 @@ export default function WalletReadPage() {
                   />
                   <div style={similarCollectorGridStyle}>
                     {similarCollectors.map((collector) => (
-                      <SimilarCollectorRow key={collector.address} collector={collector} />
+                      <SimilarCollectorCard key={collector.address} collector={collector} />
                     ))}
                   </div>
                 </Panel>
@@ -1431,44 +1434,88 @@ function CollectionImage({ collection, size = 56 }: { collection: TopCollection;
   );
 }
 
-function SimilarCollectorRow({ collector }: { collector: SimilarCollector }) {
-  const proofCollections = collector.matchedCollections
-    .map((collection) => collection.name)
-    .filter(Boolean)
-    .slice(0, 4);
-  const label = collector.displayName || collector.shortWallet;
+function SimilarCollectorCard({ collector }: { collector: SimilarCollector }) {
+  const label = collector.ens || collector.displayName || collector.username || collector.shortWallet;
+  const secondaryIdentity = collector.username
+    ? `${collector.username} · ${collector.shortWallet}`
+    : collector.shortWallet;
   const initials = label.replace(/^0x/i, "").slice(0, 2).toUpperCase();
+  const proofLine = `Holds ${collector.sharedCollectionCount} of this wallet’s collection signals.`;
 
   return (
-    <a
-      href={collector.openseaProfileUrl}
-      target="_blank"
-      rel="noreferrer"
-      style={similarCollectorRowStyle}
-    >
-      {collector.avatarUrl ? (
-        <img
-          src={collector.avatarUrl}
-          alt=""
-          width={42}
-          height={42}
-          loading="lazy"
-          style={similarCollectorAvatarStyle}
-        />
-      ) : (
-        <span style={similarCollectorAvatarFallbackStyle} aria-hidden="true">
-          {initials}
-        </span>
-      )}
-      <span style={{ minWidth: 0 }}>
-        <span style={similarCollectorNameStyle}>{label}</span>
-        <span style={similarCollectorReasonStyle}>{collector.reason}</span>
-        {proofCollections.length > 0 && (
-          <span style={similarCollectorProofStyle}>{formatList(proofCollections)}</span>
+    <article style={similarCollectorCardStyle}>
+      <a
+        href={collector.openseaProfileUrl}
+        target="_blank"
+        rel="noreferrer"
+        style={similarCollectorAvatarLinkStyle}
+        aria-label={`View ${label} on OpenSea`}
+      >
+        {collector.avatarUrl ? (
+          <img
+            src={collector.avatarUrl}
+            alt=""
+            width={44}
+            height={44}
+            loading="lazy"
+            style={similarCollectorAvatarStyle}
+          />
+        ) : (
+          <span style={similarCollectorAvatarFallbackStyle} aria-hidden="true">
+            {initials}
+          </span>
         )}
-      </span>
-      <span style={similarCollectorAddressStyle}>{collector.shortWallet}</span>
-    </a>
+      </a>
+
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <a
+          href={collector.openseaProfileUrl}
+          target="_blank"
+          rel="noreferrer"
+          style={similarCollectorNameStyle}
+        >
+          {label}
+        </a>
+        {secondaryIdentity && (
+          <p style={similarCollectorIdentityStyle}>{secondaryIdentity}</p>
+        )}
+        <p style={similarCollectorReasonStyle}>{proofLine}</p>
+
+        {collector.matchedCollections.length > 0 && (
+          <div style={similarCollectorChipRowStyle}>
+            {collector.matchedCollections.map((collection) => (
+              <span key={collection.slug} style={similarCollectorChipStyle}>
+                {collection.image_url ? (
+                  <img
+                    src={collection.image_url}
+                    alt=""
+                    width={16}
+                    height={16}
+                    loading="lazy"
+                    style={similarCollectorChipImageStyle}
+                  />
+                ) : (
+                  <span style={similarCollectorChipFallbackStyle} aria-hidden="true" />
+                )}
+                <span style={similarCollectorChipNameStyle}>{collection.name}</span>
+                <span style={similarCollectorChipCountStyle}>
+                  · {formatHeldCount(collection.heldCount)} held
+                </span>
+              </span>
+            ))}
+          </div>
+        )}
+
+        <a
+          href={collector.openseaProfileUrl}
+          target="_blank"
+          rel="noreferrer"
+          style={similarCollectorOpenSeaLinkStyle}
+        >
+          View on OpenSea
+        </a>
+      </div>
+    </article>
   );
 }
 
@@ -1551,6 +1598,12 @@ function ArtistPieceImage({
 function formatPieceCount(count: number): string {
   return `${count} ${count === 1 ? "piece" : "pieces"}`;
 }
+
+function formatHeldCount(count: number): string {
+  return HELD_COUNT_FORMATTER.format(count);
+}
+
+const HELD_COUNT_FORMATTER = new Intl.NumberFormat("en-US");
 
 const panelShellStyle: React.CSSProperties = {
   background: "var(--jpgs-surface)",
@@ -1660,31 +1713,44 @@ const similarCollectorGridStyle: React.CSSProperties = {
   gap: "clamp(10px, 1.8vw, 12px)",
 };
 
-const similarCollectorRowStyle: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "42px minmax(0, 1fr) auto",
-  gap: 12,
-  alignItems: "center",
+const similarCollectorCardStyle: React.CSSProperties = {
+  display: "flex",
+  gap: 16,
+  alignItems: "flex-start",
   border: "1px solid var(--jpgs-border)",
   borderRadius: 8,
-  padding: "12px 14px",
+  padding: "18px 20px",
   background: "rgba(255,255,255,0.018)",
   color: "var(--jpgs-text)",
+};
+
+const similarCollectorAvatarLinkStyle: React.CSSProperties = {
+  flexShrink: 0,
+  width: 44,
+  height: 44,
+  borderRadius: 8,
+  overflow: "hidden",
   textDecoration: "none",
+  background: "rgba(255,255,255,0.04)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
 };
 
 const similarCollectorAvatarStyle: React.CSSProperties = {
-  width: 42,
-  height: 42,
+  width: "100%",
+  height: "100%",
   objectFit: "cover",
   borderRadius: 8,
   background: "rgba(255,255,255,0.04)",
 };
 
 const similarCollectorAvatarFallbackStyle: React.CSSProperties = {
-  ...similarCollectorAvatarStyle,
-  display: "grid",
-  placeItems: "center",
+  width: "100%",
+  height: "100%",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
   color: "var(--jpgs-accent)",
   background: "rgba(149,117,255,0.12)",
   fontSize: 12,
@@ -1696,36 +1762,88 @@ const similarCollectorNameStyle: React.CSSProperties = {
   fontSize: 14,
   fontWeight: 500,
   lineHeight: 1.35,
+  color: "var(--jpgs-text)",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+  textDecoration: "none",
+};
+
+const similarCollectorIdentityStyle: React.CSSProperties = {
+  color: "rgba(168,164,157,0.62)",
+  fontSize: 11,
+  lineHeight: 1.45,
+  marginTop: 2,
+  marginBottom: 0,
   overflow: "hidden",
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
 };
 
 const similarCollectorReasonStyle: React.CSSProperties = {
-  display: "block",
   color: "var(--jpgs-muted)",
   fontSize: 12,
   lineHeight: 1.45,
-  marginTop: 2,
+  marginTop: 4,
+  marginBottom: 12,
 };
 
-const similarCollectorProofStyle: React.CSSProperties = {
-  display: "block",
+const similarCollectorChipRowStyle: React.CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 6,
+};
+
+const similarCollectorChipStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 5,
+  maxWidth: "100%",
+  minWidth: 0,
+  background: "rgba(255,255,255,0.05)",
+  border: "1px solid rgba(255,255,255,0.07)",
+  borderRadius: 999,
+  padding: "3px 8px 3px 4px",
   color: "var(--jpgs-muted)",
-  fontSize: 12,
-  lineHeight: 1.45,
-  marginTop: 3,
+  fontSize: 11,
+  lineHeight: 1.4,
+};
+
+const similarCollectorChipImageStyle: React.CSSProperties = {
+  width: 16,
+  height: 16,
+  borderRadius: "50%",
+  objectFit: "cover",
+  flexShrink: 0,
+  background: "rgba(255,255,255,0.04)",
+};
+
+const similarCollectorChipFallbackStyle: React.CSSProperties = {
+  ...similarCollectorChipImageStyle,
+  display: "inline-block",
+  background: "rgba(149,117,255,0.2)",
+};
+
+const similarCollectorChipNameStyle: React.CSSProperties = {
+  minWidth: 0,
   overflow: "hidden",
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
-  opacity: 0.78,
 };
 
-const similarCollectorAddressStyle: React.CSSProperties = {
+const similarCollectorChipCountStyle: React.CSSProperties = {
+  color: "rgba(168,164,157,0.55)",
+  flexShrink: 0,
+};
+
+const similarCollectorOpenSeaLinkStyle: React.CSSProperties = {
+  display: "inline-block",
+  marginTop: 10,
   color: "var(--jpgs-muted)",
-  fontFamily: "var(--font-geist-mono)",
   fontSize: 11,
   lineHeight: 1.4,
+  textDecoration: "none",
+  opacity: 0.45,
 };
 
 const sectionHeadingStyle: React.CSSProperties = {

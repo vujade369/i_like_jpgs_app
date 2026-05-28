@@ -20,9 +20,12 @@ type MatchedCollection = {
 type CollectorWallet = {
   address: string;
   displayName: string;
+  username?: string;
+  ens?: string;
   avatarUrl?: string;
   openseaUsername?: string;
   openseaProfileUrl: string;
+  identitySource?: string;
   matchedCollections: MatchedCollection[];
   matchedCollectionCount: number;
   totalHeldFromSelected: number;
@@ -38,6 +41,10 @@ type DiscoverResponse = {
     errors: string[];
   };
 };
+
+function shortAddress(address: string): string {
+  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
 
 function ResultsInner() {
   const params = useSearchParams();
@@ -250,7 +257,11 @@ function ResultsInner() {
 }
 
 function CollectorCard({ wallet }: { wallet: CollectorWallet }) {
-  const initials = wallet.displayName.slice(0, 2).toUpperCase();
+  const shortWallet = shortAddress(wallet.address);
+  const label = wallet.ens || wallet.displayName || wallet.username || wallet.openseaUsername || shortWallet;
+  const username = wallet.username || wallet.openseaUsername;
+  const secondaryIdentity = username ? `${username} · ${shortWallet}` : shortWallet;
+  const initials = label.replace(/^0x/i, "").slice(0, 2).toUpperCase();
 
   return (
     <div style={{
@@ -303,12 +314,18 @@ function CollectorCard({ wallet }: { wallet: CollectorWallet }) {
               textDecoration: "none",
             }}
           >
-            {wallet.displayName}
+            {label}
           </a>
           <span style={{ fontSize: 11, color: "rgb(149,117,255)", flexShrink: 0, fontWeight: 600 }}>
             {wallet.score}
           </span>
         </div>
+
+        {secondaryIdentity && (
+          <p style={{ fontSize: 11, color: "rgba(168,164,157,0.62)", marginBottom: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {secondaryIdentity}
+          </p>
+        )}
 
         <p style={{ fontSize: 12, color: "rgba(168,164,157,0.6)", marginBottom: 12 }}>
           {wallet.reason}

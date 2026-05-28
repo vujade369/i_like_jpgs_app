@@ -543,22 +543,71 @@ export type OsAccount = {
   address: string;
   username?: string;
   display_name?: string;
+  displayName?: string;
+  name?: string;
   ens?: string;
   ens_name?: string;
   profile_image_url?: string;
   image_url?: string;
   avatar_url?: string;
   avatar?: string;
+  account?: {
+    address?: string;
+    username?: string;
+    display_name?: string;
+    displayName?: string;
+    name?: string;
+    ens?: string;
+    ens_name?: string;
+    profile_image_url?: string;
+    image_url?: string;
+    avatar_url?: string;
+    avatar?: string;
+  };
+  user?: {
+    username?: string;
+    display_name?: string;
+    displayName?: string;
+    name?: string;
+    ens?: string;
+    ens_name?: string;
+    profile_image_url?: string;
+    image_url?: string;
+    avatar_url?: string;
+    avatar?: string;
+  };
 };
 
 export async function fetchAccount(address: string): Promise<OsAccount | null> {
   try {
-    return await osGet<OsAccount>(
-      `/accounts/${address}`,
-      { next: { revalidate: 300 } } as RequestInit,
-    );
+    return await osGet<OsAccount>(`/accounts/${address}`);
   } catch {
     return null;
+  }
+}
+
+export async function fetchResolvedAccount(
+  address: string,
+  timeoutMs = 2_000,
+): Promise<OsAccount | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(
+      `${OPENSEA_BASE}/accounts/resolve/${encodeURIComponent(address)}`,
+      {
+        signal: controller.signal,
+        headers: { "X-API-KEY": apiKey(), Accept: "application/json" },
+        cache: "no-store",
+      },
+    );
+    if (!res.ok) return null;
+    return await res.json() as OsAccount;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -570,6 +619,16 @@ export type WalletIdentitySuggestion = {
   address?: string;
   avatarUrl?: string;
   source: "opensea";
+};
+
+export type OpenSeaAccountIdentity = {
+  displayName: string;
+  username?: string;
+  ens?: string;
+  avatarUrl?: string;
+  openseaProfileUrl: string;
+  identitySource: "account" | "account+resolve" | "resolve" | "fallback";
+  resolvedAddress?: string;
 };
 
 const WALLET_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
@@ -609,14 +668,112 @@ function normalizeIdentityText(value?: string): NormalizedIdentityText {
   };
 }
 
+function firstText(...values: Array<string | undefined>): string | undefined {
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed) return trimmed;
+  }
+  return undefined;
+}
+
+function usernameFromAccount(account?: OsAccount | null): string | undefined {
+  return firstText(account?.username, account?.account?.username, account?.user?.username);
+}
+
+function displayNameFromAccount(account?: OsAccount | null): string | undefined {
+  return firstText(
+    account?.display_name,
+    account?.displayName,
+    account?.name,
+    account?.account?.display_name,
+    account?.account?.displayName,
+    account?.account?.name,
+    account?.user?.display_name,
+    account?.user?.displayName,
+    account?.user?.name,
+  );
+}
+
+function ensFromAccount(account?: OsAccount | null): string | undefined {
+  return firstText(
+    account?.ens,
+    account?.ens_name,
+    account?.account?.ens,
+    account?.account?.ens_name,
+    account?.user?.ens,
+    account?.user?.ens_name,
+  );
+}
+
+function addressFromAccount(account?: OsAccount | null): string | undefined {
+  return (
+    normalizeAddress(account?.address) ??
+    normalizeAddress(account?.account?.address)
+  );
+}
+
 function avatarFromAccount(account: OsAccount): string | undefined {
   return (
-    account.profile_image_url ||
-    account.image_url ||
-    account.avatar_url ||
-    account.avatar ||
+    firstText(
+      account.profile_image_url,
+      account.image_url,
+      account.avatar_url,
+      account.avatar,
+      account.account?.profile_image_url,
+      account.account?.image_url,
+      account.account?.avatar_url,
+      account.account?.avatar,
+      account.user?.profile_image_url,
+      account.user?.image_url,
+      account.user?.avatar_url,
+      account.user?.avatar,
+    ) ||
     undefined
   );
+}
+
+export function normalizeOpenSeaAccountIdentity(
+  address: string,
+  account?: OsAccount | null,
+  resolvedAccount?: OsAccount | null,
+): OpenSeaAccountIdentity {
+  const normalizedAddress =
+    addressFromAccount(resolvedAccount) ??
+    addressFromAccount(account) ??
+    normalizeAddress(address) ??
+    address;
+  const username = usernameFromAccount(account) ?? usernameFromAccount(resolvedAccount);
+  const ens = ensFromAccount(account) ?? ensFromAccount(resolvedAccount);
+  const displayName =
+    displayNameFromAccount(account) ||
+    displayNameFromAccount(resolvedAccount) ||
+    username ||
+    ens ||
+    shortAddress(normalizedAddress) ||
+    normalizedAddress;
+  const avatarUrl = account
+    ? avatarFromAccount(account)
+    : resolvedAccount
+      ? avatarFromAccount(resolvedAccount)
+      : undefined;
+  const profileIdentifier = username || ens || normalizedAddress;
+  const identitySource = account
+    ? resolvedAccount
+      ? "account+resolve"
+      : "account"
+    : resolvedAccount
+      ? "resolve"
+      : "fallback";
+
+  return {
+    displayName,
+    username,
+    ens,
+    avatarUrl,
+    openseaProfileUrl: `https://opensea.io/${profileIdentifier}`,
+    identitySource,
+    resolvedAddress: normalizedAddress !== normalizeAddress(address) ? normalizedAddress : undefined,
+  };
 }
 
 function accountToSuggestion(account: OsAccount): WalletIdentitySuggestion | null {
@@ -873,14 +1030,12 @@ export async function resolveWalletIdentity(input: string): Promise<WalletIdenti
   try {
     const account = await osGet<OsAccount>(
       `/accounts/resolve/${encodeURIComponent(identifier)}`,
-      { next: { revalidate: 300 } } as RequestInit,
     );
     return accountToSuggestion(account);
   } catch {
     try {
       const account = await osGet<OsAccount>(
         `/accounts/${encodeURIComponent(identifier)}`,
-        { next: { revalidate: 300 } } as RequestInit,
       );
       return accountToSuggestion(account);
     } catch {
