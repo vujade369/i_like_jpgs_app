@@ -14,6 +14,8 @@ function shortenAddress(addr: string): string {
 }
 
 export async function POST(req: NextRequest) {
+  const url = new URL(req.url);
+  const debug = url.searchParams.get("debug") === "1";
   const body = await req.json() as DiscoverBody;
   const collections: CollectionRef[] = (body.collections ?? []).filter(
     (c) => c && typeof c.slug === "string" && typeof c.name === "string",
@@ -36,6 +38,7 @@ export async function POST(req: NextRequest) {
 
   const wallets = top50.map((wallet) => {
     const identity = hydration.identities.get(wallet.address.toLowerCase());
+    const profileUrl = identity?.openSeaUrl ?? identity?.openseaProfileUrl ?? `https://opensea.io/${wallet.address}`;
     const score = Math.round(
       Math.min(
         1,
@@ -50,13 +53,18 @@ export async function POST(req: NextRequest) {
 
     return {
       address: wallet.address,
-      displayName: identity?.displayName ?? shortenAddress(wallet.address),
-      username: identity?.username,
-      ens: identity?.ens,
-      avatarUrl: identity?.avatarUrl,
-      openseaUsername: identity?.username,
-      openseaProfileUrl: identity?.openseaProfileUrl ?? `https://opensea.io/${wallet.address}`,
-      identitySource: identity?.identitySource,
+      wallet: wallet.address,
+      shortWallet: shortenAddress(wallet.address),
+      displayName: identity?.displayName ?? null,
+      username: identity?.username ?? null,
+      ens: identity?.ens ?? null,
+      avatarUrl: identity?.avatarUrl ?? null,
+      profileImageUrl: identity?.profileImageUrl ?? null,
+      imageUrl: identity?.imageUrl ?? null,
+      openseaUsername: identity?.username ?? null,
+      openSeaUrl: profileUrl,
+      openseaProfileUrl: profileUrl,
+      identitySource: identity?.identitySource ?? "fallback",
       matchedCollections: wallet.matchedCollections,
       matchedCollectionCount: wallet.matchedCollectionCount,
       totalHeldFromSelected: wallet.totalHeldFromSelected,
@@ -72,6 +80,34 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     wallets,
     collections,
-    debug: { ...discovery.debug, hydrationSummary: hydration.summary },
+    ...(debug || process.env.NODE_ENV === "development"
+      ? {
+          debug: {
+            ...discovery.debug,
+            hydrationSummary: hydration.summary,
+            ...(debug
+              ? {
+                  identity: wallets.map((wallet) => {
+                    const identity = hydration.identities.get(wallet.address.toLowerCase());
+                    return {
+                      address: wallet.address,
+                      rawAccount: identity?.debug?.rawAccount ?? null,
+                      rawResolve: identity?.debug?.rawResolve ?? null,
+                      finalUsername: wallet.username,
+                      finalDisplayName: wallet.displayName,
+                      finalEns: wallet.ens,
+                      finalAvatarUrl: wallet.avatarUrl,
+                      identitySource: wallet.identitySource,
+                      avatarBeforeMapping: identity?.debug?.avatarBeforeMapping ?? false,
+                      avatarAfterMapping: Boolean(
+                        wallet.avatarUrl || wallet.profileImageUrl || wallet.imageUrl,
+                      ),
+                    };
+                  }),
+                }
+              : {}),
+          },
+        }
+      : {}),
   });
 }

@@ -53,6 +53,7 @@ type HolderCacheEntry = {
 type AccountIdentityCacheEntry = {
   fetchedAt: number;
   identity: OpenSeaAccountIdentity;
+  debug: AccountIdentityDebug;
 };
 
 export type MatchedCollection = {
@@ -119,10 +120,39 @@ export type AccountHydrationSummary = {
   concurrency: number;
 };
 
+export type AccountIdentityDebug = {
+  address: string;
+  rawAccount: {
+    username?: string;
+    display_name?: string;
+    displayName?: string;
+    name?: string;
+    profile_image_url?: string;
+    profileImageUrl?: string;
+    image_url?: string;
+    imageUrl?: string;
+    avatar_url?: string;
+    avatarUrl?: string;
+    avatar?: string;
+  } | null;
+  rawResolve: {
+    ens?: string;
+    ens_name?: string;
+    ensName?: string;
+  } | null;
+  finalUsername?: string;
+  finalDisplayName?: string;
+  finalEns?: string;
+  finalAvatarUrl?: string;
+  identitySource: OpenSeaAccountIdentity["identitySource"];
+  avatarBeforeMapping: boolean;
+};
+
 export type HydratedAccountIdentity = OpenSeaAccountIdentity & {
   address: string;
   hydrated: boolean;
   cached: boolean;
+  debug?: AccountIdentityDebug;
 };
 
 export type AccountHydrationResult = {
@@ -165,13 +195,17 @@ async function runConcurrently<T>(
 
 async function getAccountIdentity(
   address: string,
-): Promise<{ identity: OpenSeaAccountIdentity; outcome: "ok" | "fail" | "cached" }> {
+): Promise<{
+  identity: OpenSeaAccountIdentity;
+  debug: AccountIdentityDebug;
+  outcome: "ok" | "fail" | "cached";
+}> {
   const cacheKey = address.toLowerCase();
   const cached = accountIdentityCache.get(cacheKey);
 
   if (cached) {
     if (Date.now() - cached.fetchedAt <= ACCOUNT_PROFILE_CACHE_TTL_MS) {
-      return { identity: cached.identity, outcome: "cached" };
+      return { identity: cached.identity, debug: cached.debug, outcome: "cached" };
     }
     accountIdentityCache.delete(cacheKey);
   }
@@ -181,16 +215,57 @@ async function getAccountIdentity(
     ? null
     : await fetchResolvedAccount(address);
   const identity = normalizeOpenSeaAccountIdentity(address, account, resolvedAccount);
+  const debug = accountIdentityDebug(address, account, resolvedAccount, identity);
   const shouldCache = hasSuccessfulIdentity(identity, account, resolvedAccount);
 
   if (shouldCache) {
     accountIdentityCache.set(cacheKey, {
       fetchedAt: Date.now(),
       identity,
+      debug,
     });
   }
 
-  return { identity, outcome: shouldCache ? "ok" : "fail" };
+  return { identity, debug, outcome: shouldCache ? "ok" : "fail" };
+}
+
+function accountIdentityDebug(
+  address: string,
+  account: OsAccount | null,
+  resolvedAccount: OsAccount | null,
+  identity: OpenSeaAccountIdentity,
+): AccountIdentityDebug {
+  return {
+    address,
+    rawAccount: account
+      ? {
+          username: account.username,
+          display_name: account.display_name,
+          displayName: account.displayName,
+          name: account.name,
+          profile_image_url: account.profile_image_url,
+          profileImageUrl: account.profileImageUrl,
+          image_url: account.image_url,
+          imageUrl: account.imageUrl,
+          avatar_url: account.avatar_url,
+          avatarUrl: account.avatarUrl,
+          avatar: account.avatar,
+        }
+      : null,
+    rawResolve: resolvedAccount
+      ? {
+          ens: resolvedAccount.ens,
+          ens_name: resolvedAccount.ens_name,
+          ensName: resolvedAccount.ensName,
+        }
+      : null,
+    finalUsername: identity.username,
+    finalDisplayName: identity.displayName,
+    finalEns: identity.ens,
+    finalAvatarUrl: identity.avatarUrl,
+    identitySource: identity.identitySource,
+    avatarBeforeMapping: Boolean(identity.avatarUrl || identity.profileImageUrl || identity.imageUrl),
+  };
 }
 
 function hasReadableAccountName(account?: OsAccount | null): boolean {
@@ -201,34 +276,46 @@ function hasReadableAccountName(account?: OsAccount | null): boolean {
       account?.name?.trim() ||
       account?.ens?.trim() ||
       account?.ens_name?.trim() ||
+      account?.ensName?.trim() ||
       account?.account?.username?.trim() ||
       account?.account?.display_name?.trim() ||
       account?.account?.displayName?.trim() ||
       account?.account?.name?.trim() ||
       account?.account?.ens?.trim() ||
       account?.account?.ens_name?.trim() ||
+      account?.account?.ensName?.trim() ||
       account?.user?.username?.trim() ||
       account?.user?.display_name?.trim() ||
       account?.user?.displayName?.trim() ||
       account?.user?.name?.trim() ||
       account?.user?.ens?.trim() ||
-      account?.user?.ens_name?.trim(),
+      account?.user?.ens_name?.trim() ||
+      account?.user?.ensName?.trim(),
   );
 }
 
 function hasAccountAvatar(account?: OsAccount | null): boolean {
   return Boolean(
     account?.profile_image_url?.trim() ||
+      account?.profileImageUrl?.trim() ||
       account?.image_url?.trim() ||
+      account?.imageUrl?.trim() ||
       account?.avatar_url?.trim() ||
+      account?.avatarUrl?.trim() ||
       account?.avatar?.trim() ||
       account?.account?.profile_image_url?.trim() ||
+      account?.account?.profileImageUrl?.trim() ||
       account?.account?.image_url?.trim() ||
+      account?.account?.imageUrl?.trim() ||
       account?.account?.avatar_url?.trim() ||
+      account?.account?.avatarUrl?.trim() ||
       account?.account?.avatar?.trim() ||
       account?.user?.profile_image_url?.trim() ||
+      account?.user?.profileImageUrl?.trim() ||
       account?.user?.image_url?.trim() ||
+      account?.user?.imageUrl?.trim() ||
       account?.user?.avatar_url?.trim() ||
+      account?.user?.avatarUrl?.trim() ||
       account?.user?.avatar?.trim(),
   );
 }
@@ -237,10 +324,13 @@ function hasAccountEns(account?: OsAccount | null): boolean {
   return Boolean(
     account?.ens?.trim() ||
       account?.ens_name?.trim() ||
+      account?.ensName?.trim() ||
       account?.account?.ens?.trim() ||
       account?.account?.ens_name?.trim() ||
+      account?.account?.ensName?.trim() ||
       account?.user?.ens?.trim() ||
-      account?.user?.ens_name?.trim(),
+      account?.user?.ens_name?.trim() ||
+      account?.user?.ensName?.trim(),
   );
 }
 
@@ -253,6 +343,8 @@ function hasSuccessfulIdentity(
     identity.username ||
       identity.ens ||
       identity.avatarUrl ||
+      identity.profileImageUrl ||
+      identity.imageUrl ||
       hasReadableAccountName(account) ||
       hasReadableAccountName(resolvedAccount) ||
       hasAccountAvatar(account) ||
@@ -300,18 +392,19 @@ export async function hydrateAccountIdentities(
 
   const hydrated = await runConcurrently(
     limitedAddresses.map((address) => async () => {
-      const { identity, outcome } = await getAccountIdentity(address);
+      const { identity, debug, outcome } = await getAccountIdentity(address);
       const entry: HydratedAccountIdentity = {
-        address,
         ...identity,
+        address: identity.address || address,
         hydrated: outcome !== "fail",
         cached: outcome === "cached",
+        debug,
       };
 
       log.push({
         address,
         outcome,
-        hasAvatar: Boolean(identity.avatarUrl),
+        hasAvatar: Boolean(identity.avatarUrl || identity.profileImageUrl || identity.imageUrl),
         hasEns: Boolean(identity.ens),
         hasUsername: Boolean(identity.username),
       });

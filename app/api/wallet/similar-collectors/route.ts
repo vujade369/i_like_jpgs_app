@@ -54,6 +54,8 @@ function collectionRefsFromBody(body: SimilarCollectorsBody): CollectionRef[] {
 }
 
 export async function POST(req: NextRequest) {
+  const url = new URL(req.url);
+  const debug = url.searchParams.get("debug") === "1";
   let body: SimilarCollectorsBody;
   try {
     body = (await req.json()) as SimilarCollectorsBody;
@@ -104,17 +106,21 @@ export async function POST(req: NextRequest) {
 
   const collectors = matches.map((wallet) => {
     const identity = hydration.identities.get(wallet.address.toLowerCase());
-    const displayName = identity?.displayName || shortWallet(wallet.address);
+    const profileUrl = identity?.openSeaUrl ?? identity?.openseaProfileUrl ?? `https://opensea.io/${wallet.address}`;
 
     return {
       address: wallet.address,
+      wallet: wallet.address,
       shortWallet: shortWallet(wallet.address),
-      displayName,
-      username: identity?.username,
-      ens: identity?.ens,
-      avatarUrl: identity?.avatarUrl,
-      openseaProfileUrl: identity?.openseaProfileUrl ?? `https://opensea.io/${wallet.address}`,
-      identitySource: identity?.identitySource,
+      displayName: identity?.displayName ?? null,
+      username: identity?.username ?? null,
+      ens: identity?.ens ?? null,
+      avatarUrl: identity?.avatarUrl ?? null,
+      profileImageUrl: identity?.profileImageUrl ?? null,
+      imageUrl: identity?.imageUrl ?? null,
+      openSeaUrl: profileUrl,
+      openseaProfileUrl: profileUrl,
+      identitySource: identity?.identitySource ?? "fallback",
       matchedCollections: wallet.matchedCollections,
       sharedCollectionCount: wallet.matchedCollectionCount,
       totalHeldFromSelected: wallet.totalHeldFromSelected,
@@ -127,7 +133,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     collectors,
-    ...(process.env.NODE_ENV === "development"
+    ...(process.env.NODE_ENV === "development" || debug
       ? {
           debug: {
             collectionsAttempted: collections.length,
@@ -141,6 +147,27 @@ export async function POST(req: NextRequest) {
             collectionsContributingToResults: contributingCollectionSlugs.length,
             contributingCollectionSlugs,
             hydrationSummary: hydration.summary,
+            ...(debug
+              ? {
+                  identity: collectors.map((collector) => {
+                    const identity = hydration.identities.get(collector.address.toLowerCase());
+                    return {
+                      address: collector.address,
+                      rawAccount: identity?.debug?.rawAccount ?? null,
+                      rawResolve: identity?.debug?.rawResolve ?? null,
+                      finalUsername: collector.username,
+                      finalDisplayName: collector.displayName,
+                      finalEns: collector.ens,
+                      finalAvatarUrl: collector.avatarUrl,
+                      identitySource: collector.identitySource,
+                      avatarBeforeMapping: identity?.debug?.avatarBeforeMapping ?? false,
+                      avatarAfterMapping: Boolean(
+                        collector.avatarUrl || collector.profileImageUrl || collector.imageUrl,
+                      ),
+                    };
+                  }),
+                }
+              : {}),
             partialCollections: discovery.debug.collectionsFetched
               .filter((collection) => !collection.complete)
               .map((collection) => ({

@@ -19,11 +19,16 @@ type MatchedCollection = {
 
 type CollectorWallet = {
   address: string;
-  displayName: string;
-  username?: string;
-  ens?: string;
-  avatarUrl?: string;
-  openseaUsername?: string;
+  wallet?: string;
+  shortWallet?: string;
+  displayName?: string | null;
+  username?: string | null;
+  ens?: string | null;
+  avatarUrl?: string | null;
+  profileImageUrl?: string | null;
+  imageUrl?: string | null;
+  openseaUsername?: string | null;
+  openSeaUrl?: string;
   openseaProfileUrl: string;
   identitySource?: string;
   matchedCollections: MatchedCollection[];
@@ -257,10 +262,19 @@ function ResultsInner() {
 }
 
 function CollectorCard({ wallet }: { wallet: CollectorWallet }) {
+  const [avatarFailed, setAvatarFailed] = useState(false);
   const shortWallet = shortAddress(wallet.address);
   const label = wallet.ens || wallet.displayName || wallet.username || wallet.openseaUsername || shortWallet;
   const username = wallet.username || wallet.openseaUsername;
   const secondaryIdentity = username ? `${username} · ${shortWallet}` : shortWallet;
+  const avatarSrc = avatarFailed
+    ? null
+    : wallet.avatarUrl || wallet.profileImageUrl || wallet.imageUrl || null;
+  const profileIdentifier = username || wallet.ens || wallet.address;
+  const openSeaUrl =
+    wallet.openSeaUrl ||
+    wallet.openseaProfileUrl ||
+    `https://opensea.io/${profileIdentifier}`;
   const initials = label.replace(/^0x/i, "").slice(0, 2).toUpperCase();
 
   return (
@@ -274,7 +288,7 @@ function CollectorCard({ wallet }: { wallet: CollectorWallet }) {
       alignItems: "flex-start",
     }}>
       <a
-        href={wallet.openseaProfileUrl}
+        href={openSeaUrl}
         target="_blank"
         rel="noreferrer"
         style={{
@@ -290,9 +304,14 @@ function CollectorCard({ wallet }: { wallet: CollectorWallet }) {
           textDecoration: "none",
         }}
       >
-        {wallet.avatarUrl ? (
+        {avatarSrc ? (
           // eslint-disable-next-line @next/next-image/no-img-element
-          <img src={wallet.avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          <img
+            src={avatarSrc}
+            alt=""
+            onError={() => setAvatarFailed(true)}
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          />
         ) : (
           <span style={{ fontSize: 13, color: "rgb(149,117,255)", fontWeight: 500 }}>{initials}</span>
         )}
@@ -301,7 +320,7 @@ function CollectorCard({ wallet }: { wallet: CollectorWallet }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4 }}>
           <a
-            href={wallet.openseaProfileUrl}
+            href={openSeaUrl}
             target="_blank"
             rel="noreferrer"
             style={{
@@ -362,7 +381,7 @@ function CollectorCard({ wallet }: { wallet: CollectorWallet }) {
         </div>
 
         <a
-          href={wallet.openseaProfileUrl}
+          href={openSeaUrl}
           target="_blank"
           rel="noreferrer"
           style={{

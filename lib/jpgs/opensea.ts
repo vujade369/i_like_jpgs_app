@@ -547,9 +547,13 @@ export type OsAccount = {
   name?: string;
   ens?: string;
   ens_name?: string;
+  ensName?: string;
   profile_image_url?: string;
+  profileImageUrl?: string;
   image_url?: string;
+  imageUrl?: string;
   avatar_url?: string;
+  avatarUrl?: string;
   avatar?: string;
   account?: {
     address?: string;
@@ -559,9 +563,13 @@ export type OsAccount = {
     name?: string;
     ens?: string;
     ens_name?: string;
+    ensName?: string;
     profile_image_url?: string;
+    profileImageUrl?: string;
     image_url?: string;
+    imageUrl?: string;
     avatar_url?: string;
+    avatarUrl?: string;
     avatar?: string;
   };
   user?: {
@@ -571,9 +579,13 @@ export type OsAccount = {
     name?: string;
     ens?: string;
     ens_name?: string;
+    ensName?: string;
     profile_image_url?: string;
+    profileImageUrl?: string;
     image_url?: string;
+    imageUrl?: string;
     avatar_url?: string;
+    avatarUrl?: string;
     avatar?: string;
   };
 };
@@ -622,10 +634,14 @@ export type WalletIdentitySuggestion = {
 };
 
 export type OpenSeaAccountIdentity = {
-  displayName: string;
+  address: string;
+  displayName?: string;
   username?: string;
   ens?: string;
   avatarUrl?: string;
+  profileImageUrl?: string;
+  imageUrl?: string;
+  openSeaUrl: string;
   openseaProfileUrl: string;
   identitySource: "account" | "account+resolve" | "resolve" | "fallback";
   resolvedAddress?: string;
@@ -668,7 +684,7 @@ function normalizeIdentityText(value?: string): NormalizedIdentityText {
   };
 }
 
-function firstText(...values: Array<string | undefined>): string | undefined {
+function firstText(...values: Array<string | null | undefined>): string | undefined {
   for (const value of values) {
     const trimmed = value?.trim();
     if (trimmed) return trimmed;
@@ -698,10 +714,13 @@ function ensFromAccount(account?: OsAccount | null): string | undefined {
   return firstText(
     account?.ens,
     account?.ens_name,
+    account?.ensName,
     account?.account?.ens,
     account?.account?.ens_name,
+    account?.account?.ensName,
     account?.user?.ens,
     account?.user?.ens_name,
+    account?.user?.ensName,
   );
 }
 
@@ -712,20 +731,54 @@ function addressFromAccount(account?: OsAccount | null): string | undefined {
   );
 }
 
-function avatarFromAccount(account: OsAccount): string | undefined {
+function profileImageFromAccount(account?: OsAccount | null): string | undefined {
+  if (!account) return undefined;
+  return firstText(
+    account.profile_image_url,
+    account.profileImageUrl,
+    account.account?.profile_image_url,
+    account.account?.profileImageUrl,
+    account.user?.profile_image_url,
+    account.user?.profileImageUrl,
+  );
+}
+
+function imageFromAccount(account?: OsAccount | null): string | undefined {
+  if (!account) return undefined;
+  return firstText(
+    account.image_url,
+    account.imageUrl,
+    account.account?.image_url,
+    account.account?.imageUrl,
+    account.user?.image_url,
+    account.user?.imageUrl,
+  );
+}
+
+function avatarFromAccount(account?: OsAccount | null): string | undefined {
+  if (!account) return undefined;
   return (
     firstText(
       account.profile_image_url,
+      account.profileImageUrl,
       account.image_url,
+      account.imageUrl,
       account.avatar_url,
+      account.avatarUrl,
       account.avatar,
       account.account?.profile_image_url,
+      account.account?.profileImageUrl,
       account.account?.image_url,
+      account.account?.imageUrl,
       account.account?.avatar_url,
+      account.account?.avatarUrl,
       account.account?.avatar,
       account.user?.profile_image_url,
+      account.user?.profileImageUrl,
       account.user?.image_url,
+      account.user?.imageUrl,
       account.user?.avatar_url,
+      account.user?.avatarUrl,
       account.user?.avatar,
     ) ||
     undefined
@@ -748,14 +801,11 @@ export function normalizeOpenSeaAccountIdentity(
     displayNameFromAccount(account) ||
     displayNameFromAccount(resolvedAccount) ||
     username ||
-    ens ||
-    shortAddress(normalizedAddress) ||
-    normalizedAddress;
-  const avatarUrl = account
-    ? avatarFromAccount(account)
-    : resolvedAccount
-      ? avatarFromAccount(resolvedAccount)
-      : undefined;
+    ens;
+  const profileImageUrl =
+    profileImageFromAccount(account) ?? profileImageFromAccount(resolvedAccount);
+  const imageUrl = imageFromAccount(account) ?? imageFromAccount(resolvedAccount);
+  const avatarUrl = avatarFromAccount(account) ?? avatarFromAccount(resolvedAccount);
   const profileIdentifier = username || ens || normalizedAddress;
   const identitySource = account
     ? resolvedAccount
@@ -766,10 +816,14 @@ export function normalizeOpenSeaAccountIdentity(
       : "fallback";
 
   return {
+    address: normalizedAddress,
     displayName,
     username,
     ens,
     avatarUrl,
+    profileImageUrl,
+    imageUrl,
+    openSeaUrl: `https://opensea.io/${profileIdentifier}`,
     openseaProfileUrl: `https://opensea.io/${profileIdentifier}`,
     identitySource,
     resolvedAddress: normalizedAddress !== normalizeAddress(address) ? normalizedAddress : undefined,

@@ -106,11 +106,15 @@ type WalletSuggestion = {
 
 type SimilarCollector = {
   address: string;
+  wallet?: string;
   shortWallet: string;
-  displayName?: string;
-  username?: string;
-  ens?: string;
-  avatarUrl?: string;
+  displayName?: string | null;
+  username?: string | null;
+  ens?: string | null;
+  avatarUrl?: string | null;
+  profileImageUrl?: string | null;
+  imageUrl?: string | null;
+  openSeaUrl?: string;
   openseaProfileUrl: string;
   identitySource?: string;
   matchedCollections: Array<{
@@ -1435,29 +1439,39 @@ function CollectionImage({ collection, size = 56 }: { collection: TopCollection;
 }
 
 function SimilarCollectorCard({ collector }: { collector: SimilarCollector }) {
+  const [avatarFailed, setAvatarFailed] = useState(false);
   const label = collector.ens || collector.displayName || collector.username || collector.shortWallet;
   const secondaryIdentity = collector.username
     ? `${collector.username} · ${collector.shortWallet}`
     : collector.shortWallet;
+  const avatarSrc = avatarFailed
+    ? null
+    : collector.avatarUrl || collector.profileImageUrl || collector.imageUrl || null;
+  const profileIdentifier = collector.username || collector.ens || collector.address;
+  const openSeaUrl =
+    collector.openSeaUrl ||
+    collector.openseaProfileUrl ||
+    `https://opensea.io/${profileIdentifier}`;
   const initials = label.replace(/^0x/i, "").slice(0, 2).toUpperCase();
   const proofLine = `Holds ${collector.sharedCollectionCount} of this wallet’s collection signals.`;
 
   return (
     <article style={similarCollectorCardStyle}>
       <a
-        href={collector.openseaProfileUrl}
+        href={openSeaUrl}
         target="_blank"
         rel="noreferrer"
         style={similarCollectorAvatarLinkStyle}
         aria-label={`View ${label} on OpenSea`}
       >
-        {collector.avatarUrl ? (
+        {avatarSrc ? (
           <img
-            src={collector.avatarUrl}
+            src={avatarSrc}
             alt=""
             width={44}
             height={44}
             loading="lazy"
+            onError={() => setAvatarFailed(true)}
             style={similarCollectorAvatarStyle}
           />
         ) : (
@@ -1469,7 +1483,7 @@ function SimilarCollectorCard({ collector }: { collector: SimilarCollector }) {
 
       <div style={{ minWidth: 0, flex: 1 }}>
         <a
-          href={collector.openseaProfileUrl}
+          href={openSeaUrl}
           target="_blank"
           rel="noreferrer"
           style={similarCollectorNameStyle}
@@ -1507,7 +1521,7 @@ function SimilarCollectorCard({ collector }: { collector: SimilarCollector }) {
         )}
 
         <a
-          href={collector.openseaProfileUrl}
+          href={openSeaUrl}
           target="_blank"
           rel="noreferrer"
           style={similarCollectorOpenSeaLinkStyle}
