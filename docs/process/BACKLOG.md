@@ -4,36 +4,42 @@ This backlog is ordered by product learning value, not ambition.
 
 ## Now
 
-### JPG Match
+### Compare v1
 
-- Confirm preset taste sets feel useful.
-- Confirm wallet discovery is reliable enough for demo.
-- Improve result-card clarity if needed.
-- Add shareable URL only if it supports testing.
+Build the relationship layer on top of Wallet Read.
+
+Questions to answer:
+
+- What do two wallets share?
+- Where do they differ?
+- Which visible collection signals create the overlap?
+- Which taste categories do they meet around?
+- What does each wallet bring that the other does not?
 
 ## Next
 
-### Wallet Read
+### Wallet Read Feedback
 
-User enters one wallet and gets a lightweight taste profile.
+Wallet Read v1 is ready for early feedback/testing.
 
 Questions to answer:
 
 - Does the result feel personally interesting?
 - Does it avoid overclaiming identity?
-- Does it make someone want to connect a wallet?
+- Does it make someone want to compare two wallets?
+- Which proof or metadata gaps matter in real testing?
 
 ## Later
 
-### Wallet Compare
+### Compare Extensions
 
-Two wallets are compared for overlap and contrast.
+Expand Compare after v1 proves useful.
 
 Questions to answer:
 
 - Does overlap feel socially useful?
 - Does comparison feel generous rather than judgmental?
-- Does it create a reason to connect?
+- Do next actions create a reason to keep exploring without turning into a social/contact system?
 
 ### Orbit
 

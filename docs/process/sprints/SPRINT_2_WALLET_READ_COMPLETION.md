@@ -1,6 +1,6 @@
 # Sprint 2 — Wallet Read Completion
 
-Status: Active / Milestone 1 completion sprint
+Status: Complete enough for feedback / Wallet Read v1 baseline closed
 
 ## Sprint Goal
 
@@ -8,9 +8,9 @@ Complete the Wallet Read experience for I Like JPGs.
 
 Sprint 1 proved the foundation: a user can enter a wallet and receive a lightweight, non-financial read based on visible NFT collection signals.
 
-Sprint 2 turns that baseline into a collector-native archive: multi-wallet clarity, combined and individual views, proof near claims, timeline signals, archive discovery, and a clear path into comparison.
+Sprint 2 turns that baseline into a stable Wallet Read v1: multi-wallet clarity, combined and individual views, visible proof, nearby collectors, and a clear path into comparison.
 
-The goal is not to build a full social product yet. The goal is to make the wallet read feel useful, trustworthy, visual, and interesting enough that a collector would want to share it or compare it with another collector.
+The goal is not perfection or a full social product. The goal is a stable, usable v1 that can support feedback/testing and become the base for Compare.
 
 ## Milestone Context
 
@@ -18,11 +18,24 @@ Sprint 2 closes:
 
 - **Milestone 1 — Wallet Read Completion**
 
-Milestone 1 is complete when Wallet Read can support one or more wallets, render a strong combined read, preserve source-wallet clarity, show object-level proof, avoid market framing, and guide the user toward comparison.
+Wallet Read v1 is now complete enough to move into feedback/testing and prepare Compare work.
+
+Accepted v1 capabilities:
+
+- Wallet read for a single wallet.
+- Two-wallet combined read.
+- Individual wallet tabs.
+- Top collections.
+- Taste signals.
+- Collectors nearby / collectors near this taste.
+- OpenSea-linked proof where available.
+- Sample wallet entry point.
+- Nearby collector proof chips resilient to missing images and weaker labels.
+- Responsive-enough presentation for early testing.
 
 ## Product Loop
 
-Enter wallet → add another wallet if useful → read visible collecting patterns → inspect proof → explore rooms, anchors, and archive pieces → compare with another collector.
+Enter wallet → add another wallet if useful → read visible collecting patterns → inspect proof → explore nearby collectors → compare with another collector.
 
 ## User Promise
 
@@ -47,22 +60,46 @@ Already built before Sprint 2:
 - The page avoids obvious financial framing.
 - TypeScript passed at the previous stopping point.
 
-## What Is Not Done Yet
+## Closeout Notes
 
-Sprint 2 should focus on the missing milestone promises:
+Wallet Read v1 is good enough to move forward. Earlier archive/timeline ideas remain useful product direction, but they are not required to close this sprint.
 
-- Combined vs individual wallet views.
-- Stronger source-wallet clarity inside the read.
-- Object-level NFT proof near interpretive claims.
-- Archive-style section framing.
+Accepted deferrals:
+
 - Timeline signals.
 - From the Archive module.
-- Small collector-native signal callouts.
-- Methodology/trust layer.
-- Compare CTA.
-- Full milestone QA and docs closeout.
+- Fuller methodology/trust layer.
+- Broader responsive polish beyond early testing needs.
+- Data-layer hardening for overlap collection identity preservation.
 
-## Scope
+Perfection is not the sprint goal. The sprint goal is a usable Wallet Read v1 that makes visible collection signals legible and can support feedback before Compare work begins.
+
+## Nearby Collector Proof Chip Status
+
+The defensive presentation pass is complete.
+
+- Missing or failed collection images now render quiet designed fallbacks.
+- Weak/raw-looking collection labels are cleaned up where possible.
+- Held counts remain visible when present.
+- Discovery, ranking, filtering, result caps, API behavior, enrichment, and image fetching were intentionally untouched.
+
+## Deferred Known Issue — Overlap Collection Identity
+
+Nearby collector proof chips now handle incomplete metadata gracefully at the presentation layer. A later data-layer hardening pass may still be useful to stabilize overlap collection identity so nearby collector proof chips preserve the best available collection name, image, slug, and OpenSea URL across discovery surfaces. Prevent weaker fallback data from overwriting stronger enriched data.
+
+This is deferred resilience work and does not block Wallet Read v1.
+
+Future acceptance criteria:
+
+- Best-known collection name is preserved once discovered.
+- Best-known collection image is preserved once discovered.
+- Raw contract or slug fallback appears only as a last resort.
+- Overlap chips expose enough diagnostics to identify where identity was lost.
+- No ranking, discovery, API behavior, or result cap changes are bundled into this hardening task unless explicitly scoped.
+
+## Original Sprint Scope (Historical)
+
+The original scope below is retained for context. The closeout notes above are the current source of truth for Wallet Read v1 completion.
 
 ### In Scope
 
@@ -146,23 +183,24 @@ Avoid:
 - ranked
 - superior
 
-## Required Final Page Shape
+## Current Wallet Read v1 Shape
 
-The completed Wallet Read page should include:
+Wallet Read v1 includes:
 
-1. Collector Hero
+1. Homepage wallet input
 2. Wallet Set Controls
 3. Combined / Individual View Controls
-4. Timeline
-5. The Read
-6. Rooms in the Collection
-7. Places You Kept Returning
-8. From the Archive
-9. Small Signals
-10. Methodology / Trust Layer
-11. Compare CTA
+4. Wallet read results
+5. Top collections
+6. Taste signals
+7. Collectors nearby / collectors near this taste
+8. Sample wallet entry point
+9. OpenSea-linked proof where available
+10. Resilient nearby collector proof chips
 
-## Build Tracks
+Future Wallet Read ideas such as Timeline, From the Archive, and deeper methodology can return after Compare direction is validated.
+
+## Original Build Tracks (Historical)
 
 ### Track 1 — Combined and Individual Views
 
@@ -480,16 +518,15 @@ Sprint 2 is complete when:
 - Wallet chips are visible and useful.
 - Source-wallet metadata is preserved and shown where useful.
 - Duplicate NFTs are deduped in combined reads.
-- Timeline renders when available.
-- Rooms in the Collection render with proof.
-- Places You Kept Returning renders with collection anchors.
-- From the Archive renders when good candidates exist.
-- Small Signals render and feel specific.
-- Compare CTA exists.
-- Methodology/trust layer exists.
+- Top collections render with readable proof.
+- Taste signals render and stay non-financial.
+- Collectors nearby / collectors near this taste renders when supported.
+- Nearby collector proof chips handle missing images and weaker labels gracefully.
+- OpenSea-linked proof appears where available.
+- Sample wallet entry point works.
 - Empty states are graceful.
 - Error states are clear.
-- Mobile layout is usable.
+- Mobile layout is usable enough for early feedback.
 - TypeScript passes.
 - QA notes are documented.
 - The experience remains non-financial.
@@ -546,3 +583,21 @@ After changes:
 Start boring.
 
 The main risk is trying to make the page feel rich before the view model is clean. First make the wallet set understandable. Then make the read beautiful, archival, and specific.
+
+---
+
+## Implementation Note — Wallet Read Identity Header
+
+Wallet Read now uses the first included wallet as the public identity anchor.
+
+Combined reads show additional wallets as included context and address proof, not as equal social profiles. This keeps the header recognizable without making it feel like a contact card or social profile.
+
+Public social/profile links remain deferred until account metadata is inspected and confirmed.
+
+Implementation notes:
+
+- Header uses existing `sourceWallets` metadata only.
+- No `/api/wallet/read` changes were needed.
+- Duplicate NFT dedupe remains part of the read logic but is no longer surfaced as visible header copy.
+- Wallet chips no longer show an “identity anchor” label.
+- Header avatar, identity text, and metrics were visually aligned as one restrained identity block.

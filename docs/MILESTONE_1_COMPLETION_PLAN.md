@@ -1,24 +1,51 @@
-# Milestone 1 — Wallet Read Completion Plan
+# Milestone 1 — Wallet Read Closeout and Compare Preparation
 
 ## Goal
 
-Complete the wallet read experience for I Like JPGs.
+Close Wallet Read v1 as the visible collection signal foundation, then move into Compare.
 
-A user should be able to enter one or more wallets and receive a culturally interesting, non-financial collector read that feels accurate, visual, and worth exploring.
+Wallet Read v1 should be stable enough for feedback/testing. Compare v1 should build on that model as the relationship layer between two wallet reads.
 
-## Success Criteria
+## Wallet Read v1 Status
 
-Milestone 1 is complete when:
+Wallet Read v1 is complete enough to move forward when:
 
 - A user can read one wallet.
-- A user can add multiple wallets.
+- A user can create a two-wallet combined read.
 - A user can switch between combined and individual wallet views.
-- The read shows actual NFT proof near interpretive claims.
-- The page includes origin, latest arrival, taste rooms, collection anchors, and archive pieces.
+- Top collections render as visible collection anchors.
+- Taste signals render as visible metadata-based signals.
+- Collectors nearby / collectors near this taste renders where supported.
+- OpenSea-linked proof appears where available.
+- The sample wallet entry point works.
+- Nearby collector proof chips are resilient to missing images and weaker labels.
+- Empty, sparse, invalid, and metadata-poor wallets behave gracefully enough for early testing.
 - The read avoids financial, rarity, and trading language.
-- Empty, sparse, invalid, and metadata-poor wallets behave gracefully.
-- The page has a documented QA path.
-- The next action toward comparison is clear.
+
+Perfection is not the goal. The goal is a stable, usable v1 that can support feedback and become the base for Compare.
+
+## Nearby Collector Proof Chips
+
+The presentation hardening pass is complete:
+
+- Missing or failed collection images render quiet fallbacks.
+- Weak/raw-looking labels are cleaned up where possible.
+- Held counts remain visible when present.
+- Discovery, ranking, filtering, result caps, API behavior, enrichment, and image fetching were intentionally untouched.
+
+## Deferred Resilience
+
+Nearby collector proof chips now handle incomplete metadata gracefully at the presentation layer. A later data-layer hardening pass may still be useful to preserve best-known collection name, image, slug, and OpenSea URL once discovered, and prevent later fallback data from downgrading stronger metadata.
+
+This is deferred and does not block Wallet Read v1.
+
+Future acceptance criteria:
+
+- Best-known collection name is preserved once discovered.
+- Best-known collection image is preserved once discovered.
+- Raw contract or slug fallback appears only as a last resort.
+- Overlap chips expose enough diagnostics to identify where identity was lost.
+- No ranking, discovery, API behavior, or result cap changes are bundled into this hardening task unless explicitly scoped.
 
 ## Non-Goals
 
@@ -37,7 +64,7 @@ Do not build:
 - rarity ranking
 - AI identity labels
 
-## Experience Principle
+## Wallet Read Experience Principle
 
 The wallet read should feel like a living archive, not a dashboard.
 
@@ -46,84 +73,69 @@ Interpretation second.
 Metrics only when useful.
 Proof always nearby.
 
-## Required Sections
+## Next Focus — Compare v1
 
-1. Collector Hero
-2. Wallet Set Controls
-3. Timeline
-4. The Read
-5. Rooms in the Collection
-6. Places You Kept Returning
-7. From the Archive
-8. Small Signals
-9. Compare CTA
+Compare v1 is the relationship layer built on top of Wallet Read.
 
-## Build Tracks
+It should answer:
 
-### Track 1 — Multi-wallet foundation
+- What do these two wallets share?
+- Where do they differ?
+- What visible collection signals create the overlap?
+- What taste categories do they meet around?
+- What does each wallet bring that the other does not?
 
-- Add multiple wallet input support.
-- Show wallet chips.
-- Support add/remove wallet.
-- Encode wallet set in URL.
-- Dedupe NFTs across wallets.
-- Preserve source wallet metadata.
+Recommended Compare v1 sections:
 
-### Track 2 — Single vs combined toggles
+1. Comparison hero: Wallet A, Wallet B, shared visible signal summary, shared collection count, visible JPG counts where available.
+2. The Read: short editorial interpretation of the relationship, proof-backed, not financial, not forensic, and not a verdict on identity.
+3. Shared collections: concrete proof layer with collection cards and both wallets' held counts.
+4. Taste overlap: category-level overlap across visible metadata.
+5. Taste differences: signals mostly unique to Wallet A and mostly unique to Wallet B.
+6. Nearby / next actions: optional, only if already supported.
 
-- Add Combined view.
-- Add individual wallet views.
-- Recalculate read based on active wallet set.
-- Keep source attribution available.
+Compare voice:
 
-### Track 3 — More interesting read
+- Social.
+- Playful.
+- Interpretive.
+- Proof-backed.
+- Slightly dating-app energy without becoming shallow or creepy.
+- Avoid financialized language.
+- Avoid ranking collectors by worth or status.
+- Avoid pretending the app knows the whole person.
 
-- Add Timeline.
-- Add From the Archive.
-- Rename Top Collections to Places You Kept Returning.
-- Reframe Taste Signals as Rooms in the Collection.
-- Add small collector-native signal callouts.
+Suggested language:
 
-### Track 4 — Trust and transparency
+- shared signal
+- visible overlap
+- collection signal
+- taste overlap
+- adjacent taste
+- strongest shared signals
+- different corner of the map
+- meets around
+- diverges around
 
-- Add proof near claims.
-- Add info notes for combined wallets, taste rooms, first known NFT, and archive logic.
-- Add methodology drawer.
-- Avoid overclaiming.
+Avoid:
 
-### Track 5 — QA
+- compatibility score as the primary framing
+- soulmate/match cliche
+- portfolio analysis language
+- net worth/status/taste ranking
+- claims about identity beyond visible collection behavior
 
-- Test valid wallet.
-- Test multi-wallet.
-- Test sparse wallet.
-- Test invalid wallet.
-- Test missing metadata.
-- Test mobile.
-- Run TypeScript.
+## Compare Implementation Notes
 
-## Completion Checklist
+Compare should reuse Wallet Read data contracts where possible and should not reopen Wallet Read collection identity hardening unless explicitly scoped.
 
-- [ ] One wallet read works.
-- [ ] Multi-wallet read works.
-- [ ] Combined toggle works.
-- [ ] Individual wallet toggles work.
-- [ ] Wallet chips are visible.
-- [ ] Source wallet metadata is preserved.
-- [ ] First Known NFT renders if available.
-- [ ] Latest Arrival renders if available.
-- [ ] Taste rooms render.
-- [ ] Collection anchors render.
-- [ ] Archive module renders.
-- [ ] Small signals render.
-- [ ] Compare CTA exists.
-- [ ] No financial language appears.
-- [ ] Empty states are graceful.
-- [ ] Error states are clear.
-- [ ] `npx tsc --noEmit` passes.
-- [ ] QA notes are documented.
+Do not begin with a broad refactor.
 
-## Milestone Exit Question
+Suggested sequence:
 
-Would a collector send this page to someone and say, “This is actually kind of me”?
-
-If yes, Milestone 1 is complete.
+1. Audit existing compare route/page/data structures.
+2. Define Compare v1 data contract.
+3. Build static page structure using existing Wallet Read patterns.
+4. Add shared collection proof.
+5. Add category overlap/difference sections.
+6. Add editorial read last.
