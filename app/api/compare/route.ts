@@ -22,6 +22,12 @@ const OPENSEA_BASE = "https://api.opensea.io/api/v2";
 const ACCOUNT_EVENT_LIMIT = 200;
 const ACCOUNT_EVENT_MAX_PAGES_PER_CHAIN = 8;
 const ACCOUNT_EVENT_TIMEOUT_MS = 2500;
+const FALLBACK_ENTERED_MONTH_MAX_COLLECTIONS = 5;
+const FALLBACK_ENTERED_MONTH_MAX_NFTS_PER_SLOT = 5;
+const FALLBACK_ENTERED_MONTH_LOG_TIMEOUT_MS = 3500;
+const FALLBACK_ENTERED_MONTH_BLOCK_TIMEOUT_MS = 2000;
+const ERC721_TRANSFER_TOPIC =
+  "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
 type CompareWalletSummary = {
   address: string;
@@ -120,6 +126,13 @@ type CompareDebug = {
       walletAMatchesFound: number;
       walletBMatchesFound: number;
     };
+    fallback?: {
+      lookupsRan: number;
+      matchesFound: number;
+      capsHit: string[];
+      exampleFixes: Array<{ collection: string; wallet: "A" | "B"; month: string }>;
+      skippedReason?: string;
+    };
   };
 };
 
@@ -197,6 +210,98 @@ function jsonError(message: string, status: number, details?: Record<string, unk
 
 function openSeaApiKey(): string | undefined {
   return process.env.OPENSEA_API_KEY;
+}
+
+function ethereumRpcUrl(): string | undefined {
+  const alchemyKey = process.env.ALCHEMY_API_KEY;
+  if (alchemyKey) return `https://eth-mainnet.g.alchemy.com/v2/${alchemyKey}`;
+  return process.env.ETHEREUM_RPC_URL || undefined;
+}
+
+function padAddressTo32Bytes(address: string): string {
+  return "0x" + address.replace(/^0x/, "").toLowerCase().padStart(64, "0");
+}
+
+function padUint256(tokenId: string): string {
+  try {
+    return "0x" + BigInt(tokenId).toString(16).padStart(64, "0");
+  } catch {
+    return "";
+  }
+}
+
+async function fetchEthJsonRpc(
+  rpcUrl: string,
+  method: string,
+  params: unknown[],
+  timeoutMs: number,
+): Promise<unknown> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(rpcUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+      signal: controller.signal,
+      cache: "no-store",
+    });
+    if (!response.ok) throw new Error(`RPC HTTP ${response.status}`);
+    const data = await response.json() as { result?: unknown; error?: unknown };
+    if (data.error) throw new Error("RPC error");
+    return data.result;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchErc721EarliestInboundMs(
+  contractAddress: string,
+  tokenId: string,
+  walletAddress: string,
+  rpcUrl: string,
+): Promise<number | undefined> {
+  const paddedWallet = padAddressTo32Bytes(walletAddress);
+  const paddedTokenId = padUint256(tokenId);
+  if (!paddedTokenId) return undefined;
+
+  const logsResult = await fetchEthJsonRpc(
+    rpcUrl,
+    "eth_getLogs",
+    [{
+      address: contractAddress.toLowerCase(),
+      topics: [ERC721_TRANSFER_TOPIC, null, paddedWallet, paddedTokenId],
+      fromBlock: "earliest",
+      toBlock: "latest",
+    }],
+    FALLBACK_ENTERED_MONTH_LOG_TIMEOUT_MS,
+  );
+
+  const logs = Array.isArray(logsResult)
+    ? (logsResult as Array<{ blockNumber?: string }>)
+    : [];
+  if (logs.length === 0) return undefined;
+
+  let earliestBlockHex: string | undefined;
+  for (const log of logs) {
+    const blockHex = typeof log.blockNumber === "string" ? log.blockNumber : undefined;
+    if (!blockHex) continue;
+    if (!earliestBlockHex || BigInt(blockHex) < BigInt(earliestBlockHex)) {
+      earliestBlockHex = blockHex;
+    }
+  }
+  if (!earliestBlockHex) return undefined;
+
+  const block = await fetchEthJsonRpc(
+    rpcUrl,
+    "eth_getBlockByNumber",
+    [earliestBlockHex, false],
+    FALLBACK_ENTERED_MONTH_BLOCK_TIMEOUT_MS,
+  ) as { timestamp?: string } | null;
+
+  if (!block?.timestamp) return undefined;
+  const sec = parseInt(block.timestamp, 16);
+  return Number.isFinite(sec) && sec > 0 ? sec * 1000 : undefined;
 }
 
 function cleanText(value?: string | null): string | undefined {
@@ -850,6 +955,136 @@ function acquiredMapComplete(result: PromiseSettledResult<AcquiredMapResult>): b
   return result.status === "fulfilled" && result.value.complete;
 }
 
+type FallbackEnteredMonthDebug = {
+  lookupsRan: number;
+  matchesFound: number;
+  capsHit: string[];
+  exampleFixes: Array<{ collection: string; wallet: "A" | "B"; month: string }>;
+  skippedReason?: string;
+};
+
+async function fillMissingEnteredMonths(
+  sharedCollections: CompareSharedCollection[],
+  walletAAddress: string,
+  walletBAddress: string,
+  walletANfts: OsWalletNft[],
+  walletBNfts: OsWalletNft[],
+): Promise<{ updated: CompareSharedCollection[]; debug: FallbackEnteredMonthDebug }> {
+  const debug: FallbackEnteredMonthDebug = {
+    lookupsRan: 0,
+    matchesFound: 0,
+    capsHit: [],
+    exampleFixes: [],
+  };
+
+  const rpcUrl = ethereumRpcUrl();
+  if (!rpcUrl) {
+    return { updated: sharedCollections, debug: { ...debug, skippedReason: "no RPC URL configured" } };
+  }
+
+  const needsFallback = sharedCollections.filter(
+    (sc) => sc.walletAEnteredMonth === null || sc.walletBEnteredMonth === null,
+  );
+  const toProcess = needsFallback.slice(0, FALLBACK_ENTERED_MONTH_MAX_COLLECTIONS);
+  if (needsFallback.length > FALLBACK_ENTERED_MONTH_MAX_COLLECTIONS) {
+    debug.capsHit.push(
+      `collection cap: ${needsFallback.length} needed, ${FALLBACK_ENTERED_MONTH_MAX_COLLECTIONS} processed`,
+    );
+  }
+
+  type SlotTask = {
+    collectionKey: string;
+    collectionName: string;
+    wallet: "A" | "B";
+    nfts: OsWalletNft[];
+    walletAddress: string;
+  };
+
+  const slots: SlotTask[] = [];
+  for (const sc of toProcess) {
+    if (sc.walletAEnteredMonth === null) {
+      const eligible = nftsForCollection(walletANfts, sc.key).filter(
+        (nft) =>
+          nftContractAddress(nft) &&
+          nftTokenId(nft) &&
+          cleanText(nft.chain)?.toLowerCase() === "ethereum" &&
+          nft.token_standard === "ERC721",
+      );
+      if (eligible.length > 0) {
+        slots.push({ collectionKey: sc.key, collectionName: sc.name, wallet: "A", nfts: eligible, walletAddress: walletAAddress });
+      }
+    }
+    if (sc.walletBEnteredMonth === null) {
+      const eligible = nftsForCollection(walletBNfts, sc.key).filter(
+        (nft) =>
+          nftContractAddress(nft) &&
+          nftTokenId(nft) &&
+          cleanText(nft.chain)?.toLowerCase() === "ethereum" &&
+          nft.token_standard === "ERC721",
+      );
+      if (eligible.length > 0) {
+        slots.push({ collectionKey: sc.key, collectionName: sc.name, wallet: "B", nfts: eligible, walletAddress: walletBAddress });
+      }
+    }
+  }
+
+  const patchMap = new Map<string, string>();
+
+  const slotResults = await Promise.allSettled(
+    slots.map(async (slot) => {
+      const cappedNfts = slot.nfts.slice(0, FALLBACK_ENTERED_MONTH_MAX_NFTS_PER_SLOT);
+      const timestamps = await Promise.allSettled(
+        cappedNfts.map((nft) =>
+          fetchErc721EarliestInboundMs(
+            nftContractAddress(nft)!,
+            nftTokenId(nft)!,
+            slot.walletAddress,
+            rpcUrl,
+          ),
+        ),
+      );
+      return { slot, cappedNfts, timestamps };
+    }),
+  );
+
+  for (const result of slotResults) {
+    if (result.status !== "fulfilled") continue;
+    const { slot, cappedNfts, timestamps } = result.value;
+    debug.lookupsRan += cappedNfts.length;
+
+    let earliest: number | undefined;
+    for (const ts of timestamps) {
+      if (ts.status === "fulfilled" && ts.value !== undefined) {
+        debug.matchesFound++;
+        if (earliest === undefined || ts.value < earliest) earliest = ts.value;
+      }
+    }
+
+    if (earliest !== undefined) {
+      const formatted = formatEnteredMonth(earliest);
+      if (formatted) {
+        patchMap.set(`${slot.collectionKey}:${slot.wallet}`, formatted);
+        if (debug.exampleFixes.length < 3) {
+          debug.exampleFixes.push({ collection: slot.collectionName, wallet: slot.wallet, month: formatted });
+        }
+      }
+    }
+  }
+
+  const updated = sharedCollections.map((sc) => {
+    const patchA = patchMap.get(`${sc.key}:A`);
+    const patchB = patchMap.get(`${sc.key}:B`);
+    if (!patchA && !patchB) return sc;
+    return {
+      ...sc,
+      ...(patchA ? { walletAEnteredMonth: patchA } : {}),
+      ...(patchB ? { walletBEnteredMonth: patchB } : {}),
+    };
+  });
+
+  return { updated, debug };
+}
+
 function computeSharedCollections(
   walletACollections: Map<string, CompareCollectionRow>,
   walletBCollections: Map<string, CompareCollectionRow>,
@@ -1138,7 +1373,7 @@ export async function GET(req: NextRequest) {
       fetchWalletAcquiredMap(walletB.address, chainsForSharedNfts(walletBFetch.nfts, sharedKeys)),
     ]);
 
-    const sharedCollections = computeSharedCollections(
+    const sharedCollectionsRaw = computeSharedCollections(
       walletAData.collections,
       walletBData.collections,
       walletAFetch.nfts,
@@ -1146,6 +1381,14 @@ export async function GET(req: NextRequest) {
       usableAcquiredMap(walletAAcquiredMapResult),
       usableAcquiredMap(walletBAcquiredMapResult),
     );
+    const { updated: sharedCollections, debug: fallbackEnteredMonthDebug } =
+      await fillMissingEnteredMonths(
+        sharedCollectionsRaw,
+        walletA.address,
+        walletB.address,
+        walletAFetch.nfts,
+        walletBFetch.nfts,
+      ).catch(() => ({ updated: sharedCollectionsRaw, debug: { lookupsRan: 0, matchesFound: 0, capsHit: [], exampleFixes: [], skippedReason: "fallback error" } }));
     const tasteOverlap = computeTasteOverlap(walletAData.tasteSignals, walletBData.tasteSignals);
     const differences = {
       walletAOnly: computeDifferenceSignals(walletAData.tasteSignals, walletBData.tasteSignals),
@@ -1207,6 +1450,7 @@ export async function GET(req: NextRequest) {
                       },
                     }
                   : {}),
+                fallback: fallbackEnteredMonthDebug,
               },
             },
           }
