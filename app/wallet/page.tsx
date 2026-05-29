@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { BrandLockup } from "@/components/BrandLockup";
+import { WalletSearchInput, walletSuggestionValue, type WalletSuggestion } from "@/components/WalletSearchInput";
 import { looksInstitutionalCollector } from "@/lib/jpgs/institutionalWallets";
 
 type TopCollection = {
@@ -93,18 +94,7 @@ type WalletReadErrorResponse = Partial<WalletReadResponse> & {
 };
 
 type ReadState = "idle" | "loading" | "success" | "empty" | "error";
-type SuggestState = "idle" | "loading" | "ready";
 type ActiveWalletView = "combined" | string;
-
-type WalletSuggestion = {
-  label: string;
-  displayName?: string;
-  username?: string;
-  ens?: string;
-  address?: string;
-  avatarUrl?: string;
-  source: string;
-};
 
 type SimilarCollector = {
   address: string;
@@ -137,7 +127,6 @@ type SimilarCollectorsResponse = {
 type CollectorProofCollection = SimilarCollector["matchedCollections"][number];
 
 const SAMPLE_WALLET = "0x16f3d833bb91aebb5066884501242d8b3c3b5e61";
-const WALLET_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 const MAX_WALLETS = 2;
 const SHOW_TOP_ARTISTS = false;
 const SIMILAR_COLLECTOR_COLLECTION_LIMIT = 22;
@@ -188,12 +177,8 @@ export default function WalletReadPage() {
   const [error, setError] = useState("");
   const [resolvedWallet, setResolvedWallet] = useState("");
   const [selectedSuggestion, setSelectedSuggestion] = useState<WalletSuggestion | null>(null);
-  const [suggestions, setSuggestions] = useState<WalletSuggestion[]>([]);
-  const [suggestState, setSuggestState] = useState<SuggestState>("idle");
-  const [showSuggestions, setShowSuggestions] = useState(false);
   const [similarCollectors, setSimilarCollectors] = useState<SimilarCollector[]>([]);
   const [hideInstitutional, setHideInstitutional] = useState(false);
-  const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestSeq = useRef(0);
   const didHydrateUrl = useRef(false);
 
@@ -292,43 +277,6 @@ export default function WalletReadPage() {
   }, []);
 
   useEffect(() => {
-    const q = wallet.trim();
-
-    if (q.length < 2 || resolvedWallet || WALLET_ADDRESS_RE.test(q) || walletSet.length >= MAX_WALLETS) {
-      setSuggestions([]);
-      setSuggestState("idle");
-      setShowSuggestions(false);
-      return;
-    }
-
-    const controller = new AbortController();
-    const timer = setTimeout(async () => {
-      setSuggestState("loading");
-      try {
-        const res = await fetch(`/api/wallet/suggest?q=${encodeURIComponent(q)}`, {
-          signal: controller.signal,
-        });
-        const data = (await res.json()) as { suggestions?: WalletSuggestion[] };
-        const nextSuggestions = data.suggestions ?? [];
-        setSuggestions(nextSuggestions);
-        setShowSuggestions(nextSuggestions.length > 0);
-      } catch {
-        if (!controller.signal.aborted) {
-          setSuggestions([]);
-          setShowSuggestions(false);
-        }
-      } finally {
-        if (!controller.signal.aborted) setSuggestState("ready");
-      }
-    }, 300);
-
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [wallet, resolvedWallet, walletSet.length]);
-
-  useEffect(() => {
     const similarCollectorCollections = profile?.similarCollectorCollections ?? profile?.topCollections ?? [];
 
     if (state !== "success" || !profile || similarCollectorCollections.length < 2) {
@@ -377,7 +325,6 @@ export default function WalletReadPage() {
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setShowSuggestions(false);
 
     if (walletSet.length >= MAX_WALLETS) return;
 
@@ -401,7 +348,6 @@ export default function WalletReadPage() {
     setWallet("");
     setResolvedWallet("");
     setSelectedSuggestion(null);
-    setShowSuggestions(false);
     void readWalletSet([SAMPLE_WALLET]);
   }
 
@@ -409,20 +355,12 @@ export default function WalletReadPage() {
     setWallet(value);
     setResolvedWallet("");
     setSelectedSuggestion(null);
-    setShowSuggestions(
-      value.trim().length >= 2 &&
-        !WALLET_ADDRESS_RE.test(value.trim()) &&
-        walletSet.length < MAX_WALLETS &&
-        suggestions.length > 0,
-    );
   }
 
   function selectSuggestion(suggestion: WalletSuggestion) {
-    const readableLabel = suggestion.displayName || suggestion.ens || suggestion.username || suggestion.address || suggestion.label;
-    setWallet(readableLabel);
+    setWallet(walletSuggestionValue(suggestion));
     setResolvedWallet(suggestion.address ?? "");
     setSelectedSuggestion(suggestion);
-    setShowSuggestions(false);
   }
 
   function removeWallet(addressOrInput: string) {
@@ -457,115 +395,17 @@ export default function WalletReadPage() {
         </p>
 
         <form onSubmit={handleSubmit} style={{ display: "flex", gap: 10, alignItems: "stretch", flexWrap: "wrap" }}>
-          <div style={{ position: "relative", flex: "1 1 360px", minWidth: 0 }}>
-            <input
-              value={wallet}
-              onChange={(event) => handleWalletChange(event.target.value)}
-              onFocus={() => {
-                if (blurTimer.current) clearTimeout(blurTimer.current);
-                if (suggestions.length > 0 && !atWalletLimit) setShowSuggestions(true);
-              }}
-              onBlur={() => {
-                blurTimer.current = setTimeout(() => setShowSuggestions(false), 120);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") setShowSuggestions(false);
-              }}
-              placeholder={atWalletLimit ? "Two-wallet reads are the current limit." : "Search a wallet, ENS, OpenSea profile, or collector name"}
-              aria-label="Wallet, ENS, OpenSea username, or OpenSea profile URL"
-              aria-expanded={showSuggestions}
-              aria-controls="wallet-suggestions"
-              disabled={atWalletLimit}
-              name="wallet"
-              autoComplete="off"
-              spellCheck={false}
-              style={{
-                width: "100%",
-                boxSizing: "border-box",
-                background: "var(--jpgs-surface-2)",
-                border: "1px solid var(--jpgs-border)",
-                borderRadius: 8,
-                padding: "15px 16px",
-                color: "var(--jpgs-text)",
-                fontSize: 14,
-                opacity: atWalletLimit ? 0.62 : 1,
-              }}
-            />
-            {suggestState === "loading" && wallet.trim().length >= 2 && !resolvedWallet && !atWalletLimit && (
-              <div
-                aria-hidden="true"
-                style={{
-                  position: "absolute",
-                  right: 14,
-                  top: 17,
-                  width: 14,
-                  height: 14,
-                  border: "1.5px solid var(--jpgs-accent)",
-                  borderTopColor: "transparent",
-                  borderRadius: "50%",
-                  animation: "spin 0.7s linear infinite",
-                }}
-              />
-            )}
-            {showSuggestions && suggestions.length > 0 && !atWalletLimit && (
-              <div
-                id="wallet-suggestions"
-                role="listbox"
-                style={{
-                  position: "absolute",
-                  zIndex: 20,
-                  top: "calc(100% + 6px)",
-                  left: 0,
-                  right: 0,
-                  background: "rgb(18,18,18)",
-                  border: "1px solid var(--jpgs-border)",
-                  borderRadius: 8,
-                  overflow: "hidden",
-                  boxShadow: "0 16px 40px rgba(0,0,0,0.35)",
-                }}
-              >
-                {suggestions.map((suggestion) => (
-                  <button
-                    key={`${suggestion.source}-${suggestion.address ?? suggestion.username ?? suggestion.ens ?? suggestion.label}`}
-                    type="button"
-                    role="option"
-                    onMouseDown={(event) => {
-                      event.preventDefault();
-                      selectSuggestion(suggestion);
-                    }}
-                    onClick={() => selectSuggestion(suggestion)}
-                    style={{
-                      width: "100%",
-                      display: "grid",
-                      gridTemplateColumns: "34px 1fr auto",
-                      gap: 10,
-                      alignItems: "center",
-                      padding: "10px 12px",
-                      background: "transparent",
-                      border: "none",
-                      borderBottom: "1px solid rgba(255,255,255,0.06)",
-                      color: "var(--jpgs-text)",
-                      textAlign: "left",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <SuggestionAvatar suggestion={suggestion} />
-                    <span style={{ minWidth: 0 }}>
-                      <span style={{ display: "block", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {suggestion.displayName || suggestion.label}
-                      </span>
-                      <span style={{ display: "block", color: "var(--jpgs-muted)", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>
-                        {formatSuggestionHandle(suggestion)}
-                      </span>
-                    </span>
-                    <span style={{ color: "var(--jpgs-muted)", fontFamily: "var(--font-geist-mono)", fontSize: 11 }}>
-                      {shortWallet(suggestion.address)}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          <WalletSearchInput
+            value={wallet}
+            onChange={handleWalletChange}
+            onSelect={selectSuggestion}
+            selectedAddress={resolvedWallet}
+            placeholder={atWalletLimit ? "Two-wallet reads are the current limit." : "Search a wallet, ENS, OpenSea profile, or collector name"}
+            ariaLabel="Wallet, ENS, OpenSea username, or OpenSea profile URL"
+            disabled={atWalletLimit}
+            name="wallet"
+            containerStyle={{ flex: "1 1 360px" }}
+          />
           <button
             type="submit"
             disabled={state === "loading" || atWalletLimit}
@@ -1038,43 +878,6 @@ function addressProofLine(sources: SourceWalletMetadata[]): string {
     .map((source) => source.shortWallet || shortWallet(source.address) || source.address || source.input)
     .filter(Boolean)
     .join(" + ");
-}
-
-function formatSuggestionHandle(suggestion: WalletSuggestion): string {
-  const handle = suggestion.ens || suggestion.username;
-  const address = shortWallet(suggestion.address);
-  if (handle && address) return `${handle} · ${address}`;
-  return handle || address || suggestion.source;
-}
-
-function SuggestionAvatar({ suggestion }: { suggestion: WalletSuggestion }) {
-  if (suggestion.avatarUrl) {
-    return (
-      <img
-        src={suggestion.avatarUrl}
-        alt=""
-        style={{ width: 34, height: 34, objectFit: "cover", borderRadius: 8, background: "rgba(255,255,255,0.06)" }}
-      />
-    );
-  }
-
-  return (
-    <span
-      aria-hidden="true"
-      style={{
-        width: 34,
-        height: 34,
-        borderRadius: 8,
-        display: "grid",
-        placeItems: "center",
-        background: "rgba(149,117,255,0.12)",
-        color: "var(--jpgs-accent)",
-        fontSize: 11,
-      }}
-    >
-      {(suggestion.displayName || suggestion.username || suggestion.ens || suggestion.label).slice(0, 2).toUpperCase()}
-    </span>
-  );
 }
 
 function WalletChip({
