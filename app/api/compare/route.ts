@@ -15,8 +15,13 @@ const MAX_VISIBLE_NFTS = 3333;
 const MAX_COLLECTIONS_TO_ENRICH = 40;
 const TOP_COLLECTION_LIMIT = 12;
 const SHARED_COLLECTION_LIMIT = 12;
+const SHARED_COLLECTION_NFT_LIMIT = 8;
 const TASTE_EXAMPLE_LIMIT = 4;
 const DIFFERENCE_LIMIT = 4;
+const OPENSEA_BASE = "https://api.opensea.io/api/v2";
+const ACCOUNT_EVENT_LIMIT = 200;
+const ACCOUNT_EVENT_MAX_PAGES_PER_CHAIN = 8;
+const ACCOUNT_EVENT_TIMEOUT_MS = 2500;
 
 type CompareWalletSummary = {
   address: string;
@@ -52,6 +57,20 @@ type CompareSharedCollection = {
   walletBHeldCount: number;
   combinedHeldCount: number;
   strengthLabel?: string;
+  walletANfts: CompareSharedCollectionNft[];
+  walletBNfts: CompareSharedCollectionNft[];
+  walletAEnteredMonth: string | null;
+  walletBEnteredMonth: string | null;
+};
+
+type CompareSharedCollectionNft = {
+  key: string;
+  name?: string | null;
+  imageUrl?: string | null;
+  openSeaUrl?: string | null;
+  contractAddress?: string | null;
+  tokenId?: string | null;
+  quantity?: number;
 };
 
 type CompareTasteOverlap = {
@@ -85,6 +104,23 @@ type CompareDebug = {
   walletBComplete?: boolean;
   enrichedCollectionCount: number;
   maxVisibleNfts: number;
+  enteredMonth?: {
+    walletAEventAddress: string;
+    walletBEventAddress: string;
+    walletAEventRowsFetched: number;
+    walletBEventRowsFetched: number;
+    walletAAcquiredMapSize: number;
+    walletBAcquiredMapSize: number;
+    walletAAcquiredMapComplete: boolean;
+    walletBAcquiredMapComplete: boolean;
+    firstSharedCollection?: {
+      name: string;
+      walletANftsChecked: number;
+      walletBNftsChecked: number;
+      walletAMatchesFound: number;
+      walletBMatchesFound: number;
+    };
+  };
 };
 
 type CompareV1Response = {
@@ -147,13 +183,53 @@ type TimedWalletFetch = {
   elapsedMs: number;
 };
 
+type AccountTransferEvent = Record<string, unknown>;
+
+type AcquiredMapResult = {
+  acquiredAtByNftKey: Map<string, number>;
+  complete: boolean;
+  eventsFetched: number;
+};
+
 function jsonError(message: string, status: number, details?: Record<string, unknown>) {
   return NextResponse.json({ error: message, ...details }, { status });
+}
+
+function openSeaApiKey(): string | undefined {
+  return process.env.OPENSEA_API_KEY;
 }
 
 function cleanText(value?: string | null): string | undefined {
   const trimmed = value?.trim();
   return trimmed || undefined;
+}
+
+function cleanUnknownText(value: unknown): string | undefined {
+  return typeof value === "string" ? cleanText(value) : undefined;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function nestedValue(source: Record<string, unknown>, path: string[]): unknown {
+  let current: unknown = source;
+  for (const segment of path) {
+    const record = asRecord(current);
+    if (!record) return undefined;
+    current = record[segment];
+  }
+  return current;
+}
+
+function firstTextAtPath(source: Record<string, unknown>, paths: string[][]): string | undefined {
+  for (const path of paths) {
+    const value = cleanUnknownText(nestedValue(source, path));
+    if (value) return value;
+  }
+  return undefined;
 }
 
 function collectionSlug(nft: OsWalletNft): string | undefined {
@@ -201,6 +277,137 @@ function nftBalance(nft: OsWalletNft): number {
   return Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
 }
 
+function nftQuantity(nft: OsWalletNft): number | undefined {
+  const quantity = nft.quantity ?? nft.owners?.[0]?.quantity;
+  return typeof quantity === "number" && Number.isFinite(quantity) && quantity > 0 ? quantity : undefined;
+}
+
+function nftTokenId(nft: OsWalletNft): string | undefined {
+  return cleanText(nft.identifier);
+}
+
+function nftContractAddress(nft: OsWalletNft): string | undefined {
+  return cleanText(nft.contract);
+}
+
+function acquiredNftKey(contractAddress?: string | null, tokenId?: string | null): string | undefined {
+  const contract = cleanText(contractAddress)?.toLowerCase();
+  const token = cleanText(tokenId);
+  return contract && token ? `${contract}:${token}` : undefined;
+}
+
+function nftDisplayKey(nft: OsWalletNft, index: number): string {
+  const chain = cleanText(nft.chain)?.toLowerCase();
+  const contract = nftContractAddress(nft)?.toLowerCase();
+  const tokenId = nftTokenId(nft);
+
+  if (chain && contract && tokenId) return `${chain}:${contract}:${tokenId}`;
+  if (contract && tokenId) return `${contract}:${tokenId}`;
+
+  const openSeaUrl = cleanText(nft.opensea_url)?.toLowerCase();
+  if (openSeaUrl) return `opensea:${openSeaUrl}`;
+
+  const name = cleanText(nft.name)?.toLowerCase();
+  return `${collectionKey(nft)}:${name || "unnamed"}:${index}`;
+}
+
+function toSharedCollectionNfts(
+  nfts: OsWalletNft[],
+  sharedCollectionKey: string,
+): CompareSharedCollectionNft[] {
+  const rows = new Map<string, CompareSharedCollectionNft>();
+  const order = new Map<string, number>();
+
+  nfts.forEach((nft, index) => {
+    if (collectionKey(nft) !== sharedCollectionKey) return;
+
+    const key = nftDisplayKey(nft, index);
+    const quantity = nftQuantity(nft);
+    const existing = rows.get(key);
+
+    if (existing) {
+      if (quantity !== undefined) {
+        existing.quantity = (existing.quantity ?? 0) + quantity;
+      }
+      return;
+    }
+
+    rows.set(key, {
+      key,
+      name: cleanText(nft.name) ?? null,
+      imageUrl: nftImage(nft) ?? null,
+      openSeaUrl: cleanText(nft.opensea_url) ?? null,
+      contractAddress: nftContractAddress(nft) ?? null,
+      tokenId: nftTokenId(nft) ?? null,
+      ...(quantity !== undefined ? { quantity } : {}),
+    });
+    order.set(key, index);
+  });
+
+  return Array.from(rows.values())
+    .sort((a, b) => {
+      const aIndex = order.get(a.key) ?? Number.MAX_SAFE_INTEGER;
+      const bIndex = order.get(b.key) ?? Number.MAX_SAFE_INTEGER;
+      if (aIndex !== bIndex) return aIndex - bIndex;
+
+      const contractCompare = (a.contractAddress ?? "").localeCompare(b.contractAddress ?? "");
+      if (contractCompare !== 0) return contractCompare;
+
+      const tokenCompare = (a.tokenId ?? a.name ?? "").localeCompare(b.tokenId ?? b.name ?? "");
+      if (tokenCompare !== 0) return tokenCompare;
+
+      return a.key.localeCompare(b.key);
+    })
+    .slice(0, SHARED_COLLECTION_NFT_LIMIT);
+}
+
+function nftsForCollection(nfts: OsWalletNft[], sharedCollectionKey: string): OsWalletNft[] {
+  return nfts.filter((nft) => collectionKey(nft) === sharedCollectionKey);
+}
+
+function formatEnteredMonth(timestampMs: number): string | null {
+  if (!Number.isFinite(timestampMs) || timestampMs <= 0) return null;
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(timestampMs));
+}
+
+function enteredMonthForCollectionNfts(
+  currentNfts: OsWalletNft[],
+  acquiredAtByNftKey?: Map<string, number>,
+): string | null {
+  if (!acquiredAtByNftKey) return null;
+
+  let earliest: number | undefined;
+  for (const nft of currentNfts) {
+    const key = acquiredNftKey(nftContractAddress(nft), nftTokenId(nft));
+    if (!key) continue;
+
+    const timestamp = acquiredAtByNftKey.get(key);
+    if (timestamp === undefined) continue;
+    if (earliest === undefined || timestamp < earliest) earliest = timestamp;
+  }
+
+  return earliest === undefined ? null : formatEnteredMonth(earliest);
+}
+
+function acquiredMatchesForCollectionNfts(
+  currentNfts: OsWalletNft[],
+  acquiredAtByNftKey?: Map<string, number>,
+): number {
+  if (!acquiredAtByNftKey) return 0;
+
+  let matches = 0;
+  for (const nft of currentNfts) {
+    const key = acquiredNftKey(nftContractAddress(nft), nftTokenId(nft));
+    if (key && acquiredAtByNftKey.has(key)) matches++;
+  }
+
+  return matches;
+}
+
 function collectionOpenSeaUrl(slug?: string | null, collection?: OsCollection | null): string | null {
   return cleanText(collection?.opensea_url) || (cleanText(slug) ? `https://opensea.io/collection/${slug}` : null);
 }
@@ -212,10 +419,6 @@ function metadataQuality(row: Pick<CompareCollectionRow, "slug" | "imageUrl" | "
   if (row.openSeaUrl) score += 1;
   if (!/^0x[a-f0-9]{10,}$/i.test(row.name)) score += 1;
   return score;
-}
-
-function balanceScore(a: number, b: number): number {
-  return Math.min(a, b) / Math.max(a, b, 1);
 }
 
 function toNormalizedNft(nft: OsWalletNft, collection?: OsCollection | null): NormalizedNft {
@@ -424,9 +627,236 @@ async function timedFetchWalletNfts(address: string): Promise<TimedWalletFetch> 
   };
 }
 
+function sharedCollectionKeys(
+  walletACollections: Map<string, CompareCollectionRow>,
+  walletBCollections: Map<string, CompareCollectionRow>,
+): Set<string> {
+  const keys = new Set<string>();
+  for (const key of walletACollections.keys()) {
+    if (walletBCollections.has(key)) keys.add(key);
+  }
+  return keys;
+}
+
+function chainsForSharedNfts(nfts: OsWalletNft[], sharedKeys: Set<string>): string[] {
+  return Array.from(
+    nfts.reduce((chains, nft) => {
+      const chain = cleanText(nft.chain);
+      if (chain && sharedKeys.has(collectionKey(nft))) chains.add(chain);
+      return chains;
+    }, new Set<string>()),
+  ).sort((a, b) => a.localeCompare(b));
+}
+
+function parseEventTimestampMs(event: AccountTransferEvent): number | undefined {
+  const value =
+    nestedValue(event, ["event_timestamp"]) ??
+    nestedValue(event, ["timestamp"]) ??
+    nestedValue(event, ["created_date"]) ??
+    nestedValue(event, ["transaction", "timestamp"]);
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value > 1_000_000_000_000 ? value : value * 1000;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+
+    const numeric = Number(trimmed);
+    if (Number.isFinite(numeric)) return numeric > 1_000_000_000_000 ? numeric : numeric * 1000;
+
+    const parsed = Date.parse(trimmed);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+
+  return undefined;
+}
+
+function eventRecipientAddress(event: AccountTransferEvent): string | undefined {
+  return firstTextAtPath(event, [
+    ["to_account", "address"],
+    ["to_account"],
+    ["to", "address"],
+    ["to"],
+    ["recipient", "address"],
+    ["recipient"],
+    ["receiver", "address"],
+    ["receiver"],
+    ["to_address"],
+    ["recipient_address"],
+  ])?.toLowerCase();
+}
+
+function eventContractAddress(event: AccountTransferEvent): string | undefined {
+  return firstTextAtPath(event, [
+    ["asset", "contract"],
+    ["asset", "contract_address"],
+    ["asset", "asset_contract", "address"],
+    ["nft", "contract"],
+    ["nft", "contract_address"],
+    ["contract"],
+    ["contract_address"],
+    ["token_address"],
+    ["criteria", "contract", "address"],
+  ]);
+}
+
+function eventTokenId(event: AccountTransferEvent): string | undefined {
+  return firstTextAtPath(event, [
+    ["asset", "identifier"],
+    ["asset", "token_id"],
+    ["nft", "identifier"],
+    ["nft", "token_id"],
+    ["identifier"],
+    ["token_id"],
+  ]);
+}
+
+function addInboundTransferToAcquiredMap(
+  acquiredAtByNftKey: Map<string, number>,
+  event: AccountTransferEvent,
+  walletAddress: string,
+) {
+  const eventType = cleanUnknownText(event.event_type)?.toLowerCase();
+  if (eventType && eventType !== "transfer") return;
+
+  const recipient = eventRecipientAddress(event);
+  if (!recipient || recipient !== walletAddress.toLowerCase()) return;
+
+  const key = acquiredNftKey(eventContractAddress(event), eventTokenId(event));
+  if (!key) return;
+
+  const timestamp = parseEventTimestampMs(event);
+  if (timestamp === undefined) return;
+
+  const existing = acquiredAtByNftKey.get(key);
+  if (existing === undefined || timestamp < existing) {
+    acquiredAtByNftKey.set(key, timestamp);
+  }
+}
+
+async function fetchAccountTransferEventPage(
+  walletAddress: string,
+  chain: string,
+  cursor?: string,
+): Promise<{ events: AccountTransferEvent[]; next?: string }> {
+  const apiKey = openSeaApiKey();
+  if (!apiKey) throw new Error("OPENSEA_API_KEY is not set");
+
+  const params = new URLSearchParams({
+    event_type: "transfer",
+    chain,
+    limit: String(ACCOUNT_EVENT_LIMIT),
+  });
+  if (cursor) params.set("next", cursor);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ACCOUNT_EVENT_TIMEOUT_MS);
+  try {
+    const response = await fetch(
+      `${OPENSEA_BASE}/events/accounts/${encodeURIComponent(walletAddress)}?${params.toString()}`,
+      {
+        signal: controller.signal,
+        cache: "no-store",
+        headers: { "X-API-KEY": apiKey, Accept: "application/json" },
+      },
+    );
+
+    if (!response.ok) throw new Error(`OpenSea ${response.status} on account events`);
+
+    const data = await response.json() as { asset_events?: unknown; next?: unknown };
+    const events = Array.isArray(data.asset_events)
+      ? data.asset_events.filter((event): event is AccountTransferEvent => Boolean(asRecord(event)))
+      : [];
+
+    return {
+      events,
+      next: cleanUnknownText(data.next),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchWalletChainAcquiredMap(
+  walletAddress: string,
+  chain: string,
+): Promise<AcquiredMapResult> {
+  const acquiredAtByNftKey = new Map<string, number>();
+  let complete = true;
+  let eventsFetched = 0;
+
+  let cursor: string | undefined;
+  for (let page = 0; page < ACCOUNT_EVENT_MAX_PAGES_PER_CHAIN; page++) {
+    const result = await fetchAccountTransferEventPage(walletAddress, chain, cursor);
+    eventsFetched += result.events.length;
+    for (const event of result.events) {
+      addInboundTransferToAcquiredMap(acquiredAtByNftKey, event, walletAddress);
+    }
+
+    cursor = result.next;
+    if (!cursor) break;
+  }
+
+  if (cursor) complete = false;
+  return { acquiredAtByNftKey, complete, eventsFetched };
+}
+
+async function fetchWalletAcquiredMap(
+  walletAddress: string,
+  chains: string[],
+): Promise<AcquiredMapResult> {
+  const chainResults = await Promise.allSettled(
+    chains.map((chain) => fetchWalletChainAcquiredMap(walletAddress, chain)),
+  );
+  const acquiredAtByNftKey = new Map<string, number>();
+  let complete = true;
+  let eventsFetched = 0;
+
+  for (const result of chainResults) {
+    if (result.status !== "fulfilled") {
+      complete = false;
+      continue;
+    }
+
+    if (!result.value.complete) complete = false;
+    eventsFetched += result.value.eventsFetched;
+    for (const [key, timestamp] of result.value.acquiredAtByNftKey) {
+      const existing = acquiredAtByNftKey.get(key);
+      if (existing === undefined || timestamp < existing) {
+        acquiredAtByNftKey.set(key, timestamp);
+      }
+    }
+  }
+
+  return { acquiredAtByNftKey, complete, eventsFetched };
+}
+
+function usableAcquiredMap(result: PromiseSettledResult<AcquiredMapResult>): Map<string, number> | undefined {
+  if (result.status !== "fulfilled") return undefined;
+  return result.value.acquiredAtByNftKey;
+}
+
+function acquiredMapSize(result: PromiseSettledResult<AcquiredMapResult>): number {
+  return result.status === "fulfilled" ? result.value.acquiredAtByNftKey.size : 0;
+}
+
+function acquiredEventRowsFetched(result: PromiseSettledResult<AcquiredMapResult>): number {
+  return result.status === "fulfilled" ? result.value.eventsFetched : 0;
+}
+
+function acquiredMapComplete(result: PromiseSettledResult<AcquiredMapResult>): boolean {
+  return result.status === "fulfilled" && result.value.complete;
+}
+
 function computeSharedCollections(
   walletACollections: Map<string, CompareCollectionRow>,
   walletBCollections: Map<string, CompareCollectionRow>,
+  walletANfts: OsWalletNft[],
+  walletBNfts: OsWalletNft[],
+  walletAAcquiredAtByNftKey?: Map<string, number>,
+  walletBAcquiredAtByNftKey?: Map<string, number>,
 ): CompareSharedCollection[] {
   const shared: CompareSharedCollection[] = [];
 
@@ -435,6 +865,9 @@ function computeSharedCollections(
     if (!walletBCollection) continue;
 
     const combinedHeldCount = walletACollection.heldCount + walletBCollection.heldCount;
+    const walletACollectionNfts = nftsForCollection(walletANfts, key);
+    const walletBCollectionNfts = nftsForCollection(walletBNfts, key);
+
     shared.push({
       key,
       slug: walletACollection.slug ?? walletBCollection.slug ?? null,
@@ -446,25 +879,26 @@ function computeSharedCollections(
       combinedHeldCount,
       strengthLabel:
         combinedHeldCount >= 10 ? "Strong shared signal" : combinedHeldCount >= 4 ? "Clear overlap" : "Light overlap",
+      walletANfts: toSharedCollectionNfts(walletACollectionNfts, key),
+      walletBNfts: toSharedCollectionNfts(walletBCollectionNfts, key),
+      walletAEnteredMonth: enteredMonthForCollectionNfts(walletACollectionNfts, walletAAcquiredAtByNftKey),
+      walletBEnteredMonth: enteredMonthForCollectionNfts(walletBCollectionNfts, walletBAcquiredAtByNftKey),
     });
   }
 
   return shared
     .sort((a, b) => {
-      if (b.combinedHeldCount !== a.combinedHeldCount) {
-        return b.combinedHeldCount - a.combinedHeldCount;
-      }
+      const mutualDelta =
+        Math.min(b.walletAHeldCount, b.walletBHeldCount) -
+        Math.min(a.walletAHeldCount, a.walletBHeldCount);
+      if (mutualDelta !== 0) return mutualDelta;
 
-      const balanceDelta =
-        balanceScore(b.walletAHeldCount, b.walletBHeldCount) -
-        balanceScore(a.walletAHeldCount, a.walletBHeldCount);
-      if (balanceDelta !== 0) return balanceDelta;
+      if (b.combinedHeldCount !== a.combinedHeldCount) return b.combinedHeldCount - a.combinedHeldCount;
 
-      const aQuality = metadataQuality(a);
-      const bQuality = metadataQuality(b);
-      if (bQuality !== aQuality) return bQuality - aQuality;
+      const nameCompare = a.name.localeCompare(b.name);
+      if (nameCompare !== 0) return nameCompare;
 
-      return a.name.localeCompare(b.name);
+      return a.key.localeCompare(b.key);
     })
     .slice(0, SHARED_COLLECTION_LIMIT);
 }
@@ -698,13 +1132,35 @@ export async function GET(req: NextRequest) {
       ),
     };
 
-    const sharedCollections = computeSharedCollections(walletAData.collections, walletBData.collections);
+    const sharedKeys = sharedCollectionKeys(walletAData.collections, walletBData.collections);
+    const [walletAAcquiredMapResult, walletBAcquiredMapResult] = await Promise.allSettled([
+      fetchWalletAcquiredMap(walletA.address, chainsForSharedNfts(walletAFetch.nfts, sharedKeys)),
+      fetchWalletAcquiredMap(walletB.address, chainsForSharedNfts(walletBFetch.nfts, sharedKeys)),
+    ]);
+
+    const sharedCollections = computeSharedCollections(
+      walletAData.collections,
+      walletBData.collections,
+      walletAFetch.nfts,
+      walletBFetch.nfts,
+      usableAcquiredMap(walletAAcquiredMapResult),
+      usableAcquiredMap(walletBAcquiredMapResult),
+    );
     const tasteOverlap = computeTasteOverlap(walletAData.tasteSignals, walletBData.tasteSignals);
     const differences = {
       walletAOnly: computeDifferenceSignals(walletAData.tasteSignals, walletBData.tasteSignals),
       walletBOnly: computeDifferenceSignals(walletBData.tasteSignals, walletAData.tasteSignals),
     };
     const relationship = buildDeterministicRelationshipRead(sharedCollections, tasteOverlap, differences);
+    const firstSharedCollection = sharedCollections[0];
+    const walletAAcquiredAtByNftKey = usableAcquiredMap(walletAAcquiredMapResult);
+    const walletBAcquiredAtByNftKey = usableAcquiredMap(walletBAcquiredMapResult);
+    const firstWalletANfts = firstSharedCollection
+      ? nftsForCollection(walletAFetch.nfts, firstSharedCollection.key)
+      : [];
+    const firstWalletBNfts = firstSharedCollection
+      ? nftsForCollection(walletBFetch.nfts, firstSharedCollection.key)
+      : [];
     const response: CompareV1Response = {
       walletA: walletAData.summary,
       walletB: walletBData.summary,
@@ -731,6 +1187,27 @@ export async function GET(req: NextRequest) {
               walletBComplete: walletBFetch.complete,
               enrichedCollectionCount: enriched.size,
               maxVisibleNfts: MAX_VISIBLE_NFTS,
+              enteredMonth: {
+                walletAEventAddress: walletA.address,
+                walletBEventAddress: walletB.address,
+                walletAEventRowsFetched: acquiredEventRowsFetched(walletAAcquiredMapResult),
+                walletBEventRowsFetched: acquiredEventRowsFetched(walletBAcquiredMapResult),
+                walletAAcquiredMapSize: acquiredMapSize(walletAAcquiredMapResult),
+                walletBAcquiredMapSize: acquiredMapSize(walletBAcquiredMapResult),
+                walletAAcquiredMapComplete: acquiredMapComplete(walletAAcquiredMapResult),
+                walletBAcquiredMapComplete: acquiredMapComplete(walletBAcquiredMapResult),
+                ...(firstSharedCollection
+                  ? {
+                      firstSharedCollection: {
+                        name: firstSharedCollection.name,
+                        walletANftsChecked: firstWalletANfts.length,
+                        walletBNftsChecked: firstWalletBNfts.length,
+                        walletAMatchesFound: acquiredMatchesForCollectionNfts(firstWalletANfts, walletAAcquiredAtByNftKey),
+                        walletBMatchesFound: acquiredMatchesForCollectionNfts(firstWalletBNfts, walletBAcquiredAtByNftKey),
+                      },
+                    }
+                  : {}),
+              },
             },
           }
         : {}),
