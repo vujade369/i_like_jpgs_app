@@ -190,6 +190,10 @@ Deferred resilience: overlap collection identity preservation may need a later d
 
 Status: Next
 
+Active sprint plan: `docs/process/sprints/SPRINT_3_COMPARE_V1.md`
+
+Canonical module spec: `docs/modules/COMPARE.md`
+
 ### Goal
 
 Build Compare as the relationship layer on top of Wallet Read.

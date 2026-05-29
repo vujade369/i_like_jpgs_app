@@ -19,5 +19,10 @@ Accepted scope includes single-wallet reads, two-wallet combined reads, individu
 
 Compare v1 should now become the next product focus. It is the relationship layer built on top of Wallet Read's visible collection signal model.
 
+Canonical Compare planning docs:
+
+- `docs/modules/COMPARE.md`
+- `docs/process/sprints/SPRINT_3_COMPARE_V1.md`
+
 Reason:
 Wallet Read no longer needs to be perfect before Compare begins. Future overlap collection identity hardening is useful deferred resilience, but it should not block Compare or be bundled into Compare unless explicitly scoped.

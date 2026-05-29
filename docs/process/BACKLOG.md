@@ -8,6 +8,11 @@ This backlog is ordered by product learning value, not ambition.
 
 Build the relationship layer on top of Wallet Read.
 
+Canonical docs:
+
+- `docs/modules/COMPARE.md`
+- `docs/process/sprints/SPRINT_3_COMPARE_V1.md`
+
 Questions to answer:
 
 - What do two wallets share?

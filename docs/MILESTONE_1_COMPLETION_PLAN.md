@@ -77,6 +77,11 @@ Proof always nearby.
 
 Compare v1 is the relationship layer built on top of Wallet Read.
 
+Canonical docs:
+
+- `docs/modules/COMPARE.md`
+- `docs/process/sprints/SPRINT_3_COMPARE_V1.md`
+
 It should answer:
 
 - What do these two wallets share?
