@@ -1,65 +1,153 @@
-import Image from "next/image";
+import Link from "next/link";
+import { BrandLockup } from "@/components/BrandLockup";
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <>
+      <style>{`
+        .home-card {
+          display: block;
+          text-decoration: none;
+          background: var(--jpgs-surface);
+          border: 1px solid var(--jpgs-border);
+          border-radius: 8px;
+          padding: clamp(18px, 3.6vw, 24px);
+          transition: border-color 0.15s ease, background 0.15s ease;
+        }
+        .home-card:hover {
+          border-color: rgba(255, 255, 255, 0.13);
+          background: rgba(255, 255, 255, 0.025);
+        }
+        .home-cta-outline {
+          transition: border-color 0.15s ease, background 0.15s ease;
+        }
+        .home-cta-outline:hover {
+          border-color: rgba(255, 255, 255, 0.18) !important;
+          background: rgba(255, 255, 255, 0.04) !important;
+        }
+      `}</style>
+
+      <main className="min-h-screen" style={{ background: "var(--jpgs-bg)", color: "var(--jpgs-text)" }}>
+        {/* Hero */}
+        <section style={{ maxWidth: 920, margin: "0 auto", padding: "72px 24px 48px" }}>
+          <BrandLockup marginBottom={32} />
+
+          <h1
+            style={{
+              fontSize: "clamp(36px, 5.5vw, 52px)",
+              fontWeight: 300,
+              lineHeight: 1.1,
+              letterSpacing: "-0.01em",
+              marginTop: 0,
+              marginBottom: 20,
+            }}
+          >
+            I Like JPGs
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+
+          <p style={{ color: "var(--jpgs-muted)", fontSize: 16, lineHeight: 1.7, maxWidth: 500, marginTop: 0, marginBottom: 8 }}>
+            Read the visible collecting signals behind a wallet.
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+          <p style={{ color: "var(--jpgs-muted)", fontSize: 16, lineHeight: 1.7, maxWidth: 500, marginTop: 0, marginBottom: 36 }}>
+            See what someone collects, where your taste overlaps, and which collectors sit close to your corner of the internet.
+          </p>
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 20 }}>
+            <Link
+              href="/wallet"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "var(--jpgs-accent)",
+                border: "1px solid rgba(255,255,255,0.08)",
+                borderRadius: 8,
+                padding: "0 22px",
+                minHeight: 50,
+                color: "white",
+                fontSize: 14,
+                fontWeight: 500,
+                textDecoration: "none",
+              }}
+            >
+              Start with a wallet
+            </Link>
+
+            <Link
+              href="/compare"
+              className="home-cta-outline"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "transparent",
+                border: "1px solid var(--jpgs-border)",
+                borderRadius: 8,
+                padding: "0 22px",
+                minHeight: 50,
+                color: "var(--jpgs-text)",
+                fontSize: 14,
+                textDecoration: "none",
+              }}
+            >
+              Compare two wallets
+            </Link>
+          </div>
+
+          <p style={{ margin: 0 }}>
+            <Link
+              href="/wallet?wallet=vuja-de.eth"
+              style={{
+                fontSize: 13,
+                color: "var(--jpgs-muted)",
+                textDecoration: "underline",
+                textDecorationColor: "rgba(168,164,157,0.3)",
+                textUnderlineOffset: 3,
+              }}
+            >
+              Try Vuja De&apos;s vault
+            </Link>
+          </p>
+        </section>
+
+        {/* Feature cards */}
+        <section style={{ maxWidth: 920, margin: "0 auto", padding: "0 24px 80px" }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))",
+              gap: "clamp(10px, 2vw, 14px)",
+            }}
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+            <Link href="/wallet" className="home-card">
+              <p style={{ fontSize: 14, fontWeight: 500, color: "var(--jpgs-text)", marginTop: 0, marginBottom: 8, lineHeight: 1.35 }}>
+                Read a wallet
+              </p>
+              <p style={{ fontSize: 13, color: "var(--jpgs-muted)", lineHeight: 1.65, margin: 0 }}>
+                Visible collections, artists, and collector signals from any public wallet.
+              </p>
+            </Link>
+
+            <Link href="/compare" className="home-card">
+              <p style={{ fontSize: 14, fontWeight: 500, color: "var(--jpgs-text)", marginTop: 0, marginBottom: 8, lineHeight: 1.35 }}>
+                Compare taste
+              </p>
+              <p style={{ fontSize: 13, color: "var(--jpgs-muted)", lineHeight: 1.65, margin: 0 }}>
+                Shared collections and overlap between two wallets side by side.
+              </p>
+            </Link>
+
+            <Link href="/jpgs" className="home-card">
+              <p style={{ fontSize: 14, fontWeight: 500, color: "var(--jpgs-text)", marginTop: 0, marginBottom: 8, lineHeight: 1.35 }}>
+                Find nearby collectors
+              </p>
+              <p style={{ fontSize: 13, color: "var(--jpgs-muted)", lineHeight: 1.65, margin: 0 }}>
+                Wallets with similar collecting patterns to yours.
+              </p>
+            </Link>
+          </div>
+        </section>
       </main>
-    </div>
+    </>
   );
 }
