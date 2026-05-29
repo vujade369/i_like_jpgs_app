@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { BrandLockup } from "@/components/BrandLockup";
 
 type OsCollection = {
   collection: string;
@@ -177,9 +178,7 @@ export default function JpgsPage() {
     <main className="min-h-screen" style={{ background: "#0e0e0e", color: "rgb(240,237,230)" }}>
       {/* Hero */}
       <section style={{ maxWidth: 640, margin: "0 auto", padding: "96px 24px 24px" }}>
-        <p style={{ fontSize: 11, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgb(149,117,255)", marginBottom: 24 }}>
-          I Like JPGs
-        </p>
+        <BrandLockup marginBottom={24} />
         <h1 style={{ fontSize: 36, fontWeight: 300, lineHeight: 1.2, letterSpacing: "-0.02em", marginBottom: 16 }}>
           Find people who collect what you collect.
         </h1>
