@@ -44,6 +44,20 @@ type CompareSharedCollection = {
   walletBHeldCount: number;
   combinedHeldCount: number;
   strengthLabel?: string;
+  walletANfts: CompareSharedCollectionNft[];
+  walletBNfts: CompareSharedCollectionNft[];
+  walletAEnteredMonth: string | null;
+  walletBEnteredMonth: string | null;
+};
+
+type CompareSharedCollectionNft = {
+  key: string;
+  name?: string | null;
+  imageUrl?: string | null;
+  openSeaUrl?: string | null;
+  contractAddress?: string | null;
+  tokenId?: string | null;
+  quantity?: number;
 };
 
 type CompareTasteOverlap = {
@@ -290,7 +304,11 @@ export default function ComparePage() {
 
             <RelationshipRead result={result} />
 
-            <SharedCollectionsSection collections={result.sharedCollections} />
+            <SharedCollectionsSection
+              collections={result.sharedCollections}
+              walletA={result.walletA}
+              walletB={result.walletB}
+            />
 
             <TasteOverlapSection overlap={result.tasteOverlap} />
 
@@ -349,6 +367,10 @@ function shortWallet(address?: string | null): string {
 
 function formatCount(count: number): string {
   return NUMBER_FORMATTER.format(count);
+}
+
+function domSafeId(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]/g, "-");
 }
 
 function initialsFor(value: string): string {
@@ -483,7 +505,23 @@ function RelationshipRead({ result }: { result: CompareResponse }) {
   );
 }
 
-function SharedCollectionsSection({ collections }: { collections: CompareSharedCollection[] }) {
+function SharedCollectionsSection({
+  collections,
+  walletA,
+  walletB,
+}: {
+  collections: CompareSharedCollection[];
+  walletA: CompareWalletSummary;
+  walletB: CompareWalletSummary;
+}) {
+  const [expandedCollectionKey, setExpandedCollectionKey] = useState<string | null>(null);
+  const walletAName = walletTitle(walletA);
+  const walletBName = walletTitle(walletB);
+
+  useEffect(() => {
+    setExpandedCollectionKey(null);
+  }, [collections]);
+
   return (
     <section style={sectionStyle}>
       <SectionHeading
@@ -497,7 +535,16 @@ function SharedCollectionsSection({ collections }: { collections: CompareSharedC
       ) : (
         <div style={sharedCollectionGridStyle}>
           {collections.map((collection) => (
-            <SharedCollectionCard key={collection.key} collection={collection} />
+            <SharedCollectionCard
+              key={collection.key}
+              collection={collection}
+              walletAName={walletAName}
+              walletBName={walletBName}
+              isExpanded={expandedCollectionKey === collection.key}
+              onToggle={() =>
+                setExpandedCollectionKey((currentKey) => (currentKey === collection.key ? null : collection.key))
+              }
+            />
           ))}
         </div>
       )}
@@ -505,30 +552,170 @@ function SharedCollectionsSection({ collections }: { collections: CompareSharedC
   );
 }
 
-function SharedCollectionCard({ collection }: { collection: CompareSharedCollection }) {
-  const content = (
-    <article style={sharedCollectionCardStyle}>
-      <CollectionThumb collection={collection} size={62} />
-      <div style={{ minWidth: 0 }}>
-        <div style={sharedCardHeaderStyle}>
-          <h3 style={cardTitleStyle}>{collection.name}</h3>
-          {collection.strengthLabel && <span style={tinyPillStyle}>{collection.strengthLabel}</span>}
-        </div>
-        <div style={heldCountRowStyle}>
-          <span>Wallet A {formatCount(collection.walletAHeldCount)}</span>
-          <span>Wallet B {formatCount(collection.walletBHeldCount)}</span>
-          <span>{formatCount(collection.combinedHeldCount)} combined</span>
-        </div>
-      </div>
-    </article>
-  );
-
-  if (!collection.openSeaUrl) return content;
+function SharedCollectionCard({
+  collection,
+  walletAName,
+  walletBName,
+  isExpanded,
+  onToggle,
+}: {
+  collection: CompareSharedCollection;
+  walletAName: string;
+  walletBName: string;
+  isExpanded: boolean;
+  onToggle: () => void;
+}) {
+  const panelId = `shared-pieces-${domSafeId(collection.key)}`;
 
   return (
-    <a href={collection.openSeaUrl} target="_blank" rel="noreferrer" style={cardLinkStyle}>
-      {content}
+    <article style={sharedCollectionCardStyle}>
+      <div style={sharedCollectionSummaryStyle}>
+        <CollectionThumb collection={collection} size={76} />
+        <div style={sharedCollectionBodyStyle}>
+          <div style={sharedCardHeaderStyle}>
+            <div style={{ minWidth: 0 }}>
+              <h3 style={sharedCollectionTitleStyle}>{collection.name}</h3>
+              <p style={sharedCollectionMetaStyle}>
+                {formatCount(collection.combinedHeldCount)} visible pieces held together
+              </p>
+            </div>
+            {collection.openSeaUrl && (
+              <a href={collection.openSeaUrl} target="_blank" rel="noreferrer" style={openSeaLinkStyle}>
+                OpenSea
+              </a>
+            )}
+          </div>
+
+          <div style={sharedDepthGridStyle}>
+            <SharedWalletDepth
+              walletName={walletAName}
+              heldCount={collection.walletAHeldCount}
+              enteredMonth={collection.walletAEnteredMonth}
+            />
+            <SharedWalletDepth
+              walletName={walletBName}
+              heldCount={collection.walletBHeldCount}
+              enteredMonth={collection.walletBEnteredMonth}
+            />
+          </div>
+
+          <button
+            type="button"
+            aria-expanded={isExpanded}
+            aria-controls={panelId}
+            onClick={onToggle}
+            style={revealButtonStyle}
+          >
+            {isExpanded ? "Hide pieces" : "Reveal pieces"}
+          </button>
+        </div>
+      </div>
+
+      {isExpanded && (
+        <div id={panelId} style={sharedRevealStyle}>
+          <SharedNftColumn
+            walletName={walletAName}
+            heldCount={collection.walletAHeldCount}
+            nfts={collection.walletANfts}
+          />
+          <SharedNftColumn
+            walletName={walletBName}
+            heldCount={collection.walletBHeldCount}
+            nfts={collection.walletBNfts}
+          />
+        </div>
+      )}
+    </article>
+  );
+}
+
+function SharedWalletDepth({
+  walletName,
+  heldCount,
+  enteredMonth,
+}: {
+  walletName: string;
+  heldCount: number;
+  enteredMonth: string | null;
+}) {
+  return (
+    <div style={sharedWalletDepthStyle}>
+      <span style={sharedWalletNameStyle}>{walletName}</span>
+      <span style={sharedHeldCountStyle}>{formatCount(heldCount)} held</span>
+      {enteredMonth && <span style={sharedSinceStyle}>Since {enteredMonth}</span>}
+    </div>
+  );
+}
+
+function SharedNftColumn({
+  walletName,
+  heldCount,
+  nfts,
+}: {
+  walletName: string;
+  heldCount: number;
+  nfts: CompareSharedCollectionNft[];
+}) {
+  const moreHeldCount = Math.max(heldCount - nfts.length, 0);
+
+  return (
+    <div style={sharedNftColumnStyle}>
+      <div style={sharedNftColumnHeaderStyle}>
+        <h4 style={sharedNftColumnTitleStyle}>{walletName}</h4>
+        <span style={sharedNftColumnCountStyle}>{formatCount(heldCount)} held</span>
+      </div>
+
+      {nfts.length > 0 ? (
+        <div style={sharedNftGridStyle}>
+          {nfts.map((nft) => (
+            <SharedNftTile key={nft.key} nft={nft} />
+          ))}
+        </div>
+      ) : (
+        <p style={sharedNftEmptyStyle}>No preview pieces returned.</p>
+      )}
+
+      {moreHeldCount > 0 && <p style={moreHeldStyle}>+ {formatCount(moreHeldCount)} more held</p>}
+    </div>
+  );
+}
+
+function SharedNftTile({ nft }: { nft: CompareSharedCollectionNft }) {
+  const name = nft.name || "Visible piece";
+  const tile = (
+    <div style={sharedNftTileStyle}>
+      <NftThumb nft={nft} name={name} />
+      <span style={sharedNftNameStyle}>{name}</span>
+    </div>
+  );
+
+  if (!nft.openSeaUrl) return tile;
+
+  return (
+    <a href={nft.openSeaUrl} target="_blank" rel="noreferrer" style={sharedNftLinkStyle}>
+      {tile}
     </a>
+  );
+}
+
+function NftThumb({ nft, name }: { nft: CompareSharedCollectionNft; name: string }) {
+  if (nft.imageUrl) {
+    return (
+      <img
+        src={nft.imageUrl}
+        alt=""
+        width={54}
+        height={54}
+        loading="lazy"
+        style={sharedNftImageStyle}
+      />
+    );
+  }
+
+  return (
+    <span style={sharedNftFallbackStyle} aria-hidden="true">
+      {initialsFor(name)}
+    </span>
   );
 }
 
@@ -1021,34 +1208,53 @@ const sectionDetailStyle: React.CSSProperties = {
 
 const sharedCollectionGridStyle: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 330px), 1fr))",
+  gridTemplateColumns: "1fr",
   gap: 12,
 };
 
-const cardLinkStyle: React.CSSProperties = {
-  display: "block",
-  color: "inherit",
-  textDecoration: "none",
-};
-
 const sharedCollectionCardStyle: React.CSSProperties = {
-  minHeight: 108,
-  display: "grid",
-  gridTemplateColumns: "62px minmax(0, 1fr)",
-  gap: 14,
-  alignItems: "center",
   border: "1px solid var(--jpgs-border)",
   borderRadius: 8,
-  padding: 14,
-  background: "rgba(255,255,255,0.024)",
+  padding: "clamp(14px, 3vw, 18px)",
+  background: "rgba(255,255,255,0.022)",
+  display: "grid",
+  gap: 16,
+};
+
+const sharedCollectionSummaryStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "76px minmax(0, 1fr)",
+  gap: 16,
+  alignItems: "start",
+};
+
+const sharedCollectionBodyStyle: React.CSSProperties = {
+  minWidth: 0,
+  display: "grid",
+  gap: 12,
 };
 
 const sharedCardHeaderStyle: React.CSSProperties = {
   display: "flex",
-  gap: 8,
+  gap: 12,
   justifyContent: "space-between",
   alignItems: "start",
-  marginBottom: 10,
+};
+
+const sharedCollectionTitleStyle: React.CSSProperties = {
+  color: "var(--jpgs-text)",
+  fontSize: "clamp(17px, 2vw, 22px)",
+  fontWeight: 400,
+  lineHeight: 1.18,
+  overflowWrap: "anywhere",
+  textWrap: "balance",
+};
+
+const sharedCollectionMetaStyle: React.CSSProperties = {
+  color: "rgba(168,164,157,0.72)",
+  fontSize: 12,
+  lineHeight: 1.45,
+  marginTop: 5,
 };
 
 const cardTitleStyle: React.CSSProperties = {
@@ -1059,22 +1265,174 @@ const cardTitleStyle: React.CSSProperties = {
   overflowWrap: "anywhere",
 };
 
-const tinyPillStyle: React.CSSProperties = {
+const openSeaLinkStyle: React.CSSProperties = {
   flex: "0 0 auto",
   border: "1px solid rgba(255,255,255,0.08)",
   borderRadius: 999,
-  padding: "3px 7px",
+  padding: "5px 8px",
   color: "var(--jpgs-muted)",
-  fontSize: 10,
+  textDecoration: "none",
+  fontSize: 11,
   lineHeight: 1.2,
 };
 
-const heldCountRowStyle: React.CSSProperties = {
+const sharedDepthGridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 190px), 1fr))",
+  gap: 8,
+};
+
+const sharedWalletDepthStyle: React.CSSProperties = {
+  minWidth: 0,
+  border: "1px solid rgba(255,255,255,0.055)",
+  borderRadius: 8,
+  padding: "10px 11px",
+  background: "rgba(255,255,255,0.014)",
+};
+
+const sharedWalletNameStyle: React.CSSProperties = {
+  display: "block",
+  color: "var(--jpgs-muted)",
+  fontSize: 11,
+  lineHeight: 1.25,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+const sharedHeldCountStyle: React.CSSProperties = {
+  display: "block",
+  color: "var(--jpgs-text)",
+  fontFamily: "var(--font-geist-mono)",
+  fontSize: 14,
+  lineHeight: 1.25,
+  marginTop: 5,
+};
+
+const sharedSinceStyle: React.CSSProperties = {
+  display: "block",
+  color: "rgba(168,164,157,0.72)",
+  fontSize: 11,
+  lineHeight: 1.35,
+  marginTop: 4,
+};
+
+const revealButtonStyle: React.CSSProperties = {
+  justifySelf: "start",
+  minHeight: 34,
+  border: "1px solid rgba(255,255,255,0.09)",
+  borderRadius: 999,
+  padding: "7px 11px",
+  background: "rgba(255,255,255,0.03)",
+  color: "var(--jpgs-text)",
+  fontSize: 12,
+  cursor: "pointer",
+  touchAction: "manipulation",
+};
+
+const sharedRevealStyle: React.CSSProperties = {
+  borderTop: "1px solid rgba(255,255,255,0.06)",
+  paddingTop: 16,
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
+  gap: 14,
+};
+
+const sharedNftColumnStyle: React.CSSProperties = {
+  minWidth: 0,
+  display: "grid",
+  alignContent: "start",
+  gap: 10,
+};
+
+const sharedNftColumnHeaderStyle: React.CSSProperties = {
   display: "flex",
-  flexWrap: "wrap",
-  gap: "6px 10px",
+  justifyContent: "space-between",
+  alignItems: "baseline",
+  gap: 10,
+};
+
+const sharedNftColumnTitleStyle: React.CSSProperties = {
+  minWidth: 0,
+  color: "var(--jpgs-text)",
+  fontSize: 13,
+  fontWeight: 400,
+  lineHeight: 1.35,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+const sharedNftColumnCountStyle: React.CSSProperties = {
+  flex: "0 0 auto",
+  color: "rgba(168,164,157,0.7)",
+  fontFamily: "var(--font-geist-mono)",
+  fontSize: 11,
+};
+
+const sharedNftGridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fill, minmax(112px, 1fr))",
+  gap: 8,
+};
+
+const sharedNftTileStyle: React.CSSProperties = {
+  minWidth: 0,
+  border: "1px solid rgba(255,255,255,0.055)",
+  borderRadius: 8,
+  padding: 8,
+  background: "rgba(255,255,255,0.014)",
+  display: "grid",
+  gridTemplateColumns: "54px minmax(0, 1fr)",
+  gap: 8,
+  alignItems: "center",
+};
+
+const sharedNftLinkStyle: React.CSSProperties = {
+  color: "inherit",
+  textDecoration: "none",
+};
+
+const sharedNftImageStyle: React.CSSProperties = {
+  width: 54,
+  height: 54,
+  objectFit: "cover",
+  borderRadius: 8,
+  background: "rgba(255,255,255,0.04)",
+};
+
+const sharedNftFallbackStyle: React.CSSProperties = {
+  ...sharedNftImageStyle,
+  display: "grid",
+  placeItems: "center",
+  background: "rgba(149,117,255,0.13)",
+  color: "var(--jpgs-accent)",
+  fontFamily: "var(--font-geist-mono)",
+  fontSize: 10,
+};
+
+const sharedNftNameStyle: React.CSSProperties = {
+  minWidth: 0,
+  color: "rgba(238,235,229,0.88)",
+  fontSize: 12,
+  lineHeight: 1.35,
+  overflowWrap: "anywhere",
+};
+
+const sharedNftEmptyStyle: React.CSSProperties = {
+  border: "1px solid rgba(255,255,255,0.045)",
+  borderRadius: 8,
+  padding: "12px 13px",
   color: "var(--jpgs-muted)",
   fontSize: 12,
+  lineHeight: 1.45,
+  background: "rgba(255,255,255,0.01)",
+};
+
+const moreHeldStyle: React.CSSProperties = {
+  color: "rgba(168,164,157,0.72)",
+  fontSize: 12,
+  lineHeight: 1.4,
 };
 
 const signalGridStyle: React.CSSProperties = {
