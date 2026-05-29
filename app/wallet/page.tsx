@@ -133,6 +133,8 @@ type SimilarCollectorsResponse = {
   collectors?: SimilarCollector[];
 };
 
+type CollectorProofCollection = SimilarCollector["matchedCollections"][number];
+
 const SAMPLE_WALLET = "0x16f3d833bb91aebb5066884501242d8b3c3b5e61";
 const WALLET_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 const MAX_WALLETS = 2;
@@ -158,6 +160,21 @@ const READ_LABELS: Record<string, string> = {
   "Music / Media": "music and media",
   "Unsorted Signals": "unsorted JPGs",
 };
+
+const CONTRACT_IDENTIFIER_RE = /^(?:[a-z0-9_-]+:)?0x[a-f0-9]{40}$/i;
+
+function isRawContractIdentifier(value?: string | null): boolean {
+  return CONTRACT_IDENTIFIER_RE.test((value ?? "").trim());
+}
+
+function collectionProofLabel(collection: Pick<CollectorProofCollection, "name" | "slug">): string {
+  const name = collection.name?.trim();
+  const slug = collection.slug?.trim();
+
+  if (name && !isRawContractIdentifier(name)) return name;
+  if (slug && !isRawContractIdentifier(slug)) return slug.replace(/[-_]+/g, " ");
+  return name || slug || "Unknown collection";
+}
 
 export default function WalletReadPage() {
   const [wallet, setWallet] = useState("");
@@ -1530,24 +1547,7 @@ function SimilarCollectorCard({ collector }: { collector: SimilarCollector }) {
         {collector.matchedCollections.length > 0 && (
           <div style={similarCollectorChipRowStyle}>
             {collector.matchedCollections.map((collection) => (
-              <span key={collection.slug} style={similarCollectorChipStyle}>
-                {collection.image_url ? (
-                  <img
-                    src={collection.image_url}
-                    alt=""
-                    width={16}
-                    height={16}
-                    loading="lazy"
-                    style={similarCollectorChipImageStyle}
-                  />
-                ) : (
-                  <span style={similarCollectorChipFallbackStyle} aria-hidden="true" />
-                )}
-                <span style={similarCollectorChipNameStyle}>{collection.name}</span>
-                <span style={similarCollectorChipCountStyle}>
-                  · {formatHeldCount(collection.heldCount)} held
-                </span>
-              </span>
+              <SimilarCollectorProofChip key={collection.slug || collection.name} collection={collection} />
             ))}
           </div>
         )}
@@ -1562,6 +1562,37 @@ function SimilarCollectorCard({ collector }: { collector: SimilarCollector }) {
         </a>
       </div>
     </article>
+  );
+}
+
+function SimilarCollectorProofChip({ collection }: { collection: CollectorProofCollection }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const imageUrl = imageFailed ? null : collection.image_url;
+  const label = collectionProofLabel(collection);
+  const hasHeldCount = Number.isFinite(collection.heldCount);
+
+  return (
+    <span style={similarCollectorChipStyle}>
+      {imageUrl ? (
+        <img
+          src={imageUrl}
+          alt=""
+          width={16}
+          height={16}
+          loading="lazy"
+          onError={() => setImageFailed(true)}
+          style={similarCollectorChipImageStyle}
+        />
+      ) : (
+        <span style={similarCollectorChipFallbackStyle} aria-hidden="true" />
+      )}
+      <span style={similarCollectorChipNameStyle}>{label}</span>
+      {hasHeldCount && (
+        <span style={similarCollectorChipCountStyle}>
+          · {formatHeldCount(collection.heldCount)} held
+        </span>
+      )}
+    </span>
   );
 }
 

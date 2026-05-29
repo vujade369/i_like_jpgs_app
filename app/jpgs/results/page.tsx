@@ -48,8 +48,27 @@ type DiscoverResponse = {
   };
 };
 
+const CONTRACT_IDENTIFIER_RE = /^(?:[a-z0-9_-]+:)?0x[a-f0-9]{40}$/i;
+
 function shortAddress(address: string): string {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
+
+function formatHeldCount(count: number): string {
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(count);
+}
+
+function isRawContractIdentifier(value?: string | null): boolean {
+  return CONTRACT_IDENTIFIER_RE.test((value ?? "").trim());
+}
+
+function collectionProofLabel(collection: Pick<MatchedCollection, "name" | "slug">): string {
+  const name = collection.name?.trim();
+  const slug = collection.slug?.trim();
+
+  if (name && !isRawContractIdentifier(name)) return name;
+  if (slug && !isRawContractIdentifier(slug)) return slug.replace(/[-_]+/g, " ");
+  return name || slug || "Unknown collection";
 }
 
 function ResultsInner() {
@@ -309,6 +328,8 @@ function CollectorCard({ wallet }: { wallet: CollectorWallet }) {
     wallet.openseaProfileUrl ||
     `https://opensea.io/${profileIdentifier}`;
   const initials = label.replace(/^0x/i, "").slice(0, 2).toUpperCase();
+  const collectionLabel = wallet.matchedCollectionCount === 1 ? "collection" : "collections";
+  const overlapSummary = `${wallet.matchedCollectionCount} ${collectionLabel} · ${formatHeldCount(wallet.totalHeldFromSelected)} held`;
 
   return (
     <div style={{
@@ -368,8 +389,8 @@ function CollectorCard({ wallet }: { wallet: CollectorWallet }) {
           >
             {label}
           </a>
-          <span style={{ fontSize: 11, color: "rgb(149,117,255)", flexShrink: 0, fontWeight: 600 }}>
-            {wallet.score}
+          <span style={{ fontSize: 11, color: "rgba(168,164,157,0.68)", flexShrink: 0, fontWeight: 500 }}>
+            {overlapSummary}
           </span>
         </div>
 
@@ -385,31 +406,7 @@ function CollectorCard({ wallet }: { wallet: CollectorWallet }) {
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
           {wallet.matchedCollections.map((col) => (
-            <div
-              key={col.slug}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 5,
-                background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.07)",
-                borderRadius: 999,
-                padding: "3px 8px 3px 4px",
-                fontSize: 11,
-                color: "rgb(168,164,157)",
-              }}
-            >
-              {col.image_url ? (
-                // eslint-disable-next-line @next/next-image/no-img-element
-                <img src={col.image_url} alt="" style={{ width: 14, height: 14, borderRadius: "50%", objectFit: "cover" }} />
-              ) : (
-                <div style={{ width: 14, height: 14, borderRadius: "50%", background: "rgba(149,117,255,0.2)" }} />
-              )}
-              {col.name}
-              {col.heldCount > 1 && (
-                <span style={{ color: "rgba(168,164,157,0.5)", marginLeft: 2 }}>· {col.heldCount} held</span>
-              )}
-            </div>
+            <CollectorProofChip key={col.slug || col.name} collection={col} />
           ))}
         </div>
 
@@ -428,6 +425,68 @@ function CollectorCard({ wallet }: { wallet: CollectorWallet }) {
           View on OpenSea
         </a>
       </div>
+    </div>
+  );
+}
+
+function CollectorProofChip({ collection }: { collection: MatchedCollection }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const imageUrl = imageFailed ? null : collection.image_url;
+  const label = collectionProofLabel(collection);
+  const hasHeldCount = Number.isFinite(collection.heldCount);
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 5,
+        maxWidth: "100%",
+        minWidth: 0,
+        background: "rgba(255,255,255,0.05)",
+        border: "1px solid rgba(255,255,255,0.07)",
+        borderRadius: 999,
+        padding: "3px 8px 3px 4px",
+        fontSize: 11,
+        color: "rgb(168,164,157)",
+      }}
+    >
+      {imageUrl ? (
+        // eslint-disable-next-line @next/next-image/no-img-element
+        <img
+          src={imageUrl}
+          alt=""
+          loading="lazy"
+          onError={() => setImageFailed(true)}
+          style={{
+            width: 14,
+            height: 14,
+            borderRadius: "50%",
+            objectFit: "cover",
+            flexShrink: 0,
+            background: "rgba(255,255,255,0.04)",
+          }}
+        />
+      ) : (
+        <span
+          style={{
+            width: 14,
+            height: 14,
+            borderRadius: "50%",
+            flexShrink: 0,
+            background: "rgba(149,117,255,0.2)",
+          }}
+          aria-hidden="true"
+        />
+      )}
+      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {label}
+      </span>
+      {hasHeldCount && (
+        <span style={{ color: "rgba(168,164,157,0.5)", marginLeft: 2, flexShrink: 0 }}>
+          · {formatHeldCount(collection.heldCount)} held
+        </span>
+      )}
     </div>
   );
 }
