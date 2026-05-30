@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import { BrandLockup } from "./BrandLockup";
 
 const NAV_ITEMS = [
-  { label: "Home", href: "/" },
   { label: "Wallet", href: "/wallet" },
   { label: "Compare", href: "/compare" },
   { label: "JPG Match", href: "/jpgs" },
