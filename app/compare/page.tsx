@@ -297,8 +297,8 @@ export default function ComparePage() {
         {state === "success" && result && (
           <div style={resultStackStyle}>
             <section style={walletPairStyle}>
-              <WalletSummaryCard label="Wallet A" wallet={result.walletA} />
-              <WalletSummaryCard label="Wallet B" wallet={result.walletB} />
+              <WalletSummaryCard label="Wallet A" wallet={result.walletA} walletIdentity="a" />
+              <WalletSummaryCard label="Wallet B" wallet={result.walletB} walletIdentity="b" />
             </section>
 
             <SharedCollectionsSection
@@ -400,19 +400,22 @@ function StatePanel({
 function WalletSummaryCard({
   label,
   wallet,
+  walletIdentity,
 }: {
   label: "Wallet A" | "Wallet B";
   wallet: CompareWalletSummary;
+  walletIdentity: "a" | "b";
 }) {
   const title = walletTitle(wallet);
   const subtitle = walletSubtitle(wallet);
+  const identityColor = walletIdentity === "a" ? "var(--jpgs-wallet-a)" : "var(--jpgs-wallet-b)";
 
   return (
     <article style={walletCardStyle}>
       <div style={walletIdentityRowStyle}>
         <WalletAvatar wallet={wallet} title={title} />
         <div style={{ minWidth: 0 }}>
-          <p style={eyebrowStyle}>{label}</p>
+          <p style={{ ...eyebrowStyle, color: identityColor }}>{label}</p>
           {wallet.openSeaUrl ? (
             <a href={wallet.openSeaUrl} target="_blank" rel="noreferrer" style={walletTitleLinkStyle}>
               {title}
@@ -561,7 +564,11 @@ function SharedCollectionCard({
   return (
     <article style={sharedCollectionCardStyle}>
       <div style={sharedCollectionSummaryStyle}>
-        <CollectionThumb collection={collection} size={82} />
+        <CollectionThumb
+          collection={collection}
+          size={112}
+          style={{ boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.11)", background: "rgba(255,255,255,0.06)" }}
+        />
         <div style={sharedCollectionBodyStyle}>
           <div style={sharedCardHeaderStyle}>
             <div style={{ minWidth: 0 }}>
@@ -582,11 +589,13 @@ function SharedCollectionCard({
               walletName={walletAName}
               heldCount={collection.walletAHeldCount}
               enteredMonth={collection.walletAEnteredMonth}
+              walletIdentity="a"
             />
             <SharedWalletDepth
               walletName={walletBName}
               heldCount={collection.walletBHeldCount}
               enteredMonth={collection.walletBEnteredMonth}
+              walletIdentity="b"
             />
           </div>
 
@@ -595,7 +604,7 @@ function SharedCollectionCard({
             aria-expanded={isExpanded}
             aria-controls={panelId}
             onClick={onToggle}
-            style={revealButtonStyle}
+            className="reveal-btn"
           >
             {isExpanded ? "Hide pieces" : "Reveal pieces"}
           </button>
@@ -608,11 +617,13 @@ function SharedCollectionCard({
             walletName={walletAName}
             heldCount={collection.walletAHeldCount}
             nfts={collection.walletANfts}
+            walletIdentity="a"
           />
           <SharedNftColumn
             walletName={walletBName}
             heldCount={collection.walletBHeldCount}
             nfts={collection.walletBNfts}
+            walletIdentity="b"
           />
         </div>
       )}
@@ -624,16 +635,19 @@ function SharedWalletDepth({
   walletName,
   heldCount,
   enteredMonth,
+  walletIdentity,
 }: {
   walletName: string;
   heldCount: number;
   enteredMonth: string | null;
+  walletIdentity: "a" | "b";
 }) {
+  const sinceStyle = sinceStyleFor(walletIdentity);
   return (
     <div style={sharedWalletDepthStyle}>
       <span style={sharedWalletNameStyle}>{walletName}</span>
       <span style={sharedHeldCountStyle}>{formatCount(heldCount)} held</span>
-      {enteredMonth && <span style={sharedSinceStyle}>Since {enteredMonth}</span>}
+      {enteredMonth && <span style={sinceStyle}>Since {enteredMonth}</span>}
     </div>
   );
 }
@@ -642,21 +656,24 @@ function SharedNftColumn({
   walletName,
   heldCount,
   nfts,
+  walletIdentity,
 }: {
   walletName: string;
   heldCount: number;
   nfts: CompareSharedCollectionNft[];
+  walletIdentity: "a" | "b";
 }) {
   const moreHeldCount = Math.max(heldCount - nfts.length, 0);
   const countContext =
     moreHeldCount > 0
       ? `${formatCount(nfts.length)} shown · ${formatCount(heldCount)} held`
       : `${formatCount(heldCount)} held`;
+  const identityColor = walletIdentity === "a" ? "var(--jpgs-wallet-a)" : "var(--jpgs-wallet-b)";
 
   return (
     <div style={sharedNftColumnStyle}>
       <div style={sharedNftColumnHeaderStyle}>
-        <h4 style={sharedNftColumnTitleStyle}>{walletName}</h4>
+        <h4 style={{ ...sharedNftColumnTitleStyle, color: identityColor }}>{walletName}</h4>
         <span style={sharedNftColumnCountStyle}>{countContext}</span>
       </div>
 
@@ -790,14 +807,14 @@ function SignalRow({
           count={signal.walletACount}
           pct={pctA}
           total={totalA}
-          barColor="rgba(149,117,255,0.75)"
+          barColor="rgba(251,103,83,0.82)"
         />
         <SignalBarRow
           name={nameB}
           count={signal.walletBCount}
           pct={pctB}
           total={totalB}
-          barColor="rgba(116,190,166,0.75)"
+          barColor="rgba(126,148,234,0.82)"
         />
       </div>
     </article>
@@ -933,9 +950,11 @@ function EmptySectionCopy({ children }: { children: React.ReactNode }) {
 function CollectionThumb({
   collection,
   size,
+  style,
 }: {
   collection: { name: string; imageUrl?: string | null };
   size: number;
+  style?: React.CSSProperties;
 }) {
   if (collection.imageUrl) {
     return (
@@ -945,13 +964,13 @@ function CollectionThumb({
         width={size}
         height={size}
         loading="lazy"
-        style={{ ...collectionImageStyle, width: size, height: size }}
+        style={{ ...collectionImageStyle, width: size, height: size, ...style }}
       />
     );
   }
 
   return (
-    <span style={{ ...collectionFallbackStyle, width: size, height: size }} aria-hidden="true">
+    <span style={{ ...collectionFallbackStyle, width: size, height: size, ...style }} aria-hidden="true">
       {initialsFor(collection.name)}
     </span>
   );
@@ -1290,8 +1309,8 @@ const sharedCollectionCardStyle: React.CSSProperties = {
 
 const sharedCollectionSummaryStyle: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "82px minmax(0, 1fr)",
-  gap: 18,
+  gridTemplateColumns: "112px minmax(0, 1fr)",
+  gap: 20,
   alignItems: "start",
 };
 
@@ -1372,38 +1391,29 @@ const sharedWalletNameStyle: React.CSSProperties = {
 
 const sharedHeldCountStyle: React.CSSProperties = {
   display: "block",
-  color: "var(--jpgs-text)",
+  color: "var(--jpgs-muted)",
   fontFamily: "var(--font-geist-mono)",
-  fontSize: 18,
+  fontSize: 15,
   lineHeight: 1.25,
   marginTop: 6,
 };
 
-const sharedSinceStyle: React.CSSProperties = {
-  display: "inline-flex",
-  justifySelf: "start",
-  color: "rgba(149,117,255,0.9)",
-  fontSize: 11,
-  lineHeight: 1.35,
-  marginTop: 7,
-  background: "rgba(149,117,255,0.1)",
-  border: "1px solid rgba(149,117,255,0.2)",
-  borderRadius: 999,
-  padding: "2px 7px",
-};
+function sinceStyleFor(identity: "a" | "b"): React.CSSProperties {
+  const isA = identity === "a";
+  return {
+    display: "inline-flex",
+    justifySelf: "start",
+    color: isA ? "rgba(251,103,83,0.9)" : "rgba(126,148,234,0.9)",
+    fontSize: 11,
+    lineHeight: 1.35,
+    marginTop: 7,
+    background: isA ? "rgba(251,103,83,0.1)" : "rgba(126,148,234,0.1)",
+    border: `1px solid ${isA ? "rgba(251,103,83,0.22)" : "rgba(126,148,234,0.22)"}`,
+    borderRadius: 999,
+    padding: "2px 7px",
+  };
+}
 
-const revealButtonStyle: React.CSSProperties = {
-  justifySelf: "start",
-  minHeight: 34,
-  border: "1px solid rgba(255,255,255,0.09)",
-  borderRadius: 999,
-  padding: "7px 11px",
-  background: "rgba(255,255,255,0.03)",
-  color: "var(--jpgs-text)",
-  fontSize: 12,
-  cursor: "pointer",
-  touchAction: "manipulation",
-};
 
 const sharedRevealStyle: React.CSSProperties = {
   borderTop: "1px solid rgba(255,255,255,0.06)",
