@@ -2,7 +2,6 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { BrandLockup } from "@/components/BrandLockup";
 
 type CollectionRef = {
   slug: string;
@@ -137,7 +136,6 @@ function ResultsInner() {
   return (
     <>
       <section style={{ maxWidth: 640, margin: "0 auto", padding: "72px 24px 40px" }}>
-        <BrandLockup />
         <h1 style={{ fontSize: 28, fontWeight: 300, letterSpacing: "-0.02em", marginBottom: 10 }}>
           Collectors near this taste
         </h1>

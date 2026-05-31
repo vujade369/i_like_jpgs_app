@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { BrandLockup } from "@/components/BrandLockup";
 
 export default function Home() {
   return (
@@ -30,8 +29,6 @@ export default function Home() {
       <main className="min-h-screen" style={{ background: "var(--jpgs-bg)", color: "var(--jpgs-text)" }}>
         {/* Hero */}
         <section style={{ maxWidth: 920, margin: "0 auto", padding: "72px 24px 48px" }}>
-          <BrandLockup marginBottom={32} />
-
           <h1
             style={{
               fontSize: "clamp(36px, 5.5vw, 52px)",
