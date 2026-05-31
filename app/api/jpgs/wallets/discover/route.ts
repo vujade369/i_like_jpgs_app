@@ -10,7 +10,7 @@ import {
   getInstitutionalWalletReason,
 } from "@/lib/jpgs/institutionalWallets";
 
-const DISCOVER_COLLECTOR_RESULT_LIMIT = 50;
+const DISCOVER_COLLECTOR_RESULT_LIMIT = 20;
 
 type DiscoverBody = { collections: CollectionRef[] };
 

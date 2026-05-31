@@ -82,7 +82,6 @@ function ResultsInner() {
   const [error, setError] = useState<string | null>(null);
   const [partial, setPartial] = useState(false);
   const [noCollections, setNoCollections] = useState(false);
-  const [visibleCount, setVisibleCount] = useState(20);
   const [hideInstitutional, setHideInstitutional] = useState(false);
 
   useEffect(() => {
@@ -282,28 +281,10 @@ function ResultsInner() {
               </p>
             )}
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {visibleWallets.slice(0, visibleCount).map((wallet, index) => (
+              {visibleWallets.map((wallet, index) => (
                 <CollectorCard key={wallet.address} wallet={wallet} rank={index + 1} />
               ))}
             </div>
-            {visibleWallets.length > visibleCount && (
-              <button
-                onClick={() => setVisibleCount((c) => c + 20)}
-                style={{
-                  marginTop: 16,
-                  width: "100%",
-                  padding: "12px 0",
-                  background: "rgba(255,255,255,0.04)",
-                  border: "1px solid rgba(255,255,255,0.08)",
-                  borderRadius: 10,
-                  fontSize: 13,
-                  color: "rgb(168,164,157)",
-                  cursor: "pointer",
-                }}
-              >
-                Show more collectors
-              </button>
-            )}
           </>
         )}
       </section>
