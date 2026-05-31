@@ -385,13 +385,26 @@ export default function WalletReadPage() {
     ? sourceCollectors.filter((c) => c.isInstitutionalWallet).length
     : 0;
 
+  const hasResult = state === "success" || state === "empty";
+
   return (
     <main className="min-h-screen" style={{ background: "var(--jpgs-bg)", color: "var(--jpgs-text)" }}>
-      <section style={{ maxWidth: 920, margin: "0 auto", padding: "72px 24px 40px" }}>
-        <h1 style={{ fontSize: 38, fontWeight: 300, lineHeight: 1.15, marginBottom: 14 }}>
+      <section style={{ maxWidth: 920, margin: "0 auto", padding: hasResult ? "20px 24px 16px" : "72px 24px 40px" }}>
+        <h1
+          style={{
+            fontSize: hasResult ? 13 : 38,
+            fontWeight: hasResult ? 400 : 300,
+            lineHeight: hasResult ? 1.3 : 1.15,
+            marginBottom: hasResult ? 6 : 14,
+            opacity: hasResult ? 0.38 : 1,
+            whiteSpace: hasResult ? "nowrap" : undefined,
+            overflow: hasResult ? "hidden" : undefined,
+            textOverflow: hasResult ? "ellipsis" : undefined,
+          }}
+        >
           A wallet read for people who know the JPGs were never just JPGs.
         </h1>
-        <p style={{ maxWidth: 560, color: "var(--jpgs-muted)", fontSize: 16, lineHeight: 1.7, marginBottom: 28 }}>
+        <p style={{ maxWidth: 560, color: "var(--jpgs-muted)", fontSize: 16, lineHeight: 1.7, marginBottom: 28, display: hasResult ? "none" : undefined }}>
           Enter a wallet, ENS, or OpenSea profile to see the public collection signals hiding in plain sight.
         </p>
 
@@ -549,38 +562,108 @@ export default function WalletReadPage() {
 
               <Panel style={supportPanelStyle}>
                 <SectionHeading title="Top collections" detail={`Top 12 of ${profile.collectionCount} visible collections`} />
-                <div style={collectionGridStyle}>
-                  {profile.topCollections.map((collection) => (
-                    <a
-                      key={collection.slug}
-                      href={collection.openseaUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "64px minmax(0, 1fr)",
-                        gap: 14,
-                        alignItems: "center",
-                        background: "rgba(255,255,255,0.03)",
-                        border: "1px solid var(--jpgs-border)",
-                        borderRadius: 8,
-                        padding: 12,
-                        textDecoration: "none",
-                        color: "var(--jpgs-text)",
-                        minHeight: 90,
-                      }}
-                    >
-                      <CollectionImage collection={collection} size={64} />
-                      <div style={{ minWidth: 0 }}>
-                        <p style={{ fontSize: 14, marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                          {collection.name}
-                        </p>
-                        <p style={{ color: "var(--jpgs-muted)", fontSize: 12 }}>
-                          {collection.count} held
-                        </p>
-                      </div>
-                    </a>
-                  ))}
+                <div style={{ display: "grid", gap: 16 }}>
+                  {profile.topCollections.slice(0, 3).length > 0 && (
+                    <div style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 110px), 1fr))",
+                      gap: 12,
+                    }}>
+                      {profile.topCollections.slice(0, 3).map((collection) => (
+                        <a
+                          key={collection.slug}
+                          href={collection.openseaUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 10,
+                            background: "rgba(255,255,255,0.04)",
+                            border: "1px solid rgba(255,255,255,0.10)",
+                            borderRadius: 8,
+                            padding: 10,
+                            textDecoration: "none",
+                            color: "var(--jpgs-text)",
+                            overflow: "hidden",
+                          }}
+                        >
+                          <div style={{
+                            width: "100%",
+                            aspectRatio: "1",
+                            overflow: "hidden",
+                            borderRadius: 6,
+                            background: "rgba(255,255,255,0.04)",
+                            flexShrink: 0,
+                          }}>
+                            {collection.imageUrl ? (
+                              <img
+                                src={collection.imageUrl}
+                                alt=""
+                                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                              />
+                            ) : (
+                              <span style={{
+                                width: "100%",
+                                height: "100%",
+                                display: "grid",
+                                placeItems: "center",
+                                background: "rgba(149,117,255,0.14)",
+                                color: "var(--jpgs-accent)",
+                                fontSize: 16,
+                                fontFamily: "var(--font-geist-mono)",
+                              }}>
+                                {collection.name.slice(0, 2).toUpperCase()}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ minWidth: 0 }}>
+                            <p style={{ fontSize: 13, fontWeight: 500, marginBottom: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                              {collection.name}
+                            </p>
+                            <p style={{ color: "var(--jpgs-muted)", fontSize: 11 }}>
+                              {collection.count} held
+                            </p>
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                  {profile.topCollections.slice(3).length > 0 && (
+                    <div style={collectionGridStyle}>
+                      {profile.topCollections.slice(3).map((collection) => (
+                        <a
+                          key={collection.slug}
+                          href={collection.openseaUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "64px minmax(0, 1fr)",
+                            gap: 14,
+                            alignItems: "center",
+                            background: "rgba(255,255,255,0.03)",
+                            border: "1px solid var(--jpgs-border)",
+                            borderRadius: 8,
+                            padding: 12,
+                            textDecoration: "none",
+                            color: "var(--jpgs-text)",
+                            minHeight: 90,
+                          }}
+                        >
+                          <CollectionImage collection={collection} size={64} />
+                          <div style={{ minWidth: 0 }}>
+                            <p style={{ fontSize: 14, marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                              {collection.name}
+                            </p>
+                            <p style={{ color: "var(--jpgs-muted)", fontSize: 12 }}>
+                              {collection.count} held
+                            </p>
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </Panel>
 
@@ -1107,8 +1190,8 @@ function WalletReadSummary({ profile }: { profile: WalletReadResponse }) {
   return (
     <>
       <p style={eyebrowStyle}>The Read</p>
-      <h2 style={panelTitleStyle}>{read.headline}</h2>
-      <p style={mutedTextStyle}>{read.body}</p>
+      <h2 style={{ ...panelTitleStyle, fontSize: 28, lineHeight: 1.3, marginBottom: 12 }}>{read.headline}</h2>
+      <p style={{ ...mutedTextStyle, fontSize: 15, lineHeight: 1.8 }}>{read.body}</p>
     </>
   );
 }
@@ -1508,7 +1591,7 @@ const readAndSupportStyle: React.CSSProperties = {
 };
 
 const readPanelStyle: React.CSSProperties = {
-  padding: "clamp(24px, 5vw, 34px)",
+  padding: "clamp(28px, 5.5vw, 44px)",
 };
 
 const supportPanelStyle: React.CSSProperties = {
