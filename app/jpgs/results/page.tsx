@@ -55,9 +55,6 @@ function shortAddress(address: string): string {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
-function formatHeldCount(count: number): string {
-  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(count);
-}
 
 function isRawContractIdentifier(value?: string | null): boolean {
   return CONTRACT_IDENTIFIER_RE.test((value ?? "").trim());
@@ -70,6 +67,16 @@ function collectionProofLabel(collection: Pick<MatchedCollection, "name" | "slug
   if (name && !isRawContractIdentifier(name)) return name;
   if (slug && !isRawContractIdentifier(slug)) return slug.replace(/[-_]+/g, " ");
   return name || slug || "Unknown collection";
+}
+
+function whyLine(collections: MatchedCollection[]): string {
+  const count = collections.length;
+  if (count === 0) return "";
+  const a = collectionProofLabel(collections[0]);
+  if (count === 1) return `Overlaps on ${a}`;
+  const b = collectionProofLabel(collections[1]);
+  if (count === 2) return `Overlaps on ${a} and ${b}`;
+  return `Overlaps on ${a}, ${b}, and ${count - 2} more`;
 }
 
 function ResultsInner() {
@@ -307,8 +314,7 @@ function CollectorCard({ wallet, rank }: { wallet: CollectorWallet; rank: number
     wallet.openseaProfileUrl ||
     `https://opensea.io/${profileIdentifier}`;
   const initials = label.replace(/^0x/i, "").slice(0, 2).toUpperCase();
-  const collectionLabel = wallet.matchedCollectionCount === 1 ? "collection" : "collections";
-  const overlapSummary = `${wallet.matchedCollectionCount} ${collectionLabel} · ${formatHeldCount(wallet.totalHeldFromSelected)} held`;
+  const why = whyLine(wallet.matchedCollections);
 
   return (
     <div style={{
@@ -326,8 +332,8 @@ function CollectorCard({ wallet, rank }: { wallet: CollectorWallet; rank: number
         rel="noreferrer"
         style={{
           flexShrink: 0,
-          width: 44,
-          height: 44,
+          width: 56,
+          height: 56,
           borderRadius: "50%",
           overflow: "hidden",
           background: "rgba(149,117,255,0.15)",
@@ -346,15 +352,12 @@ function CollectorCard({ wallet, rank }: { wallet: CollectorWallet; rank: number
             style={{ width: "100%", height: "100%", objectFit: "cover" }}
           />
         ) : (
-          <span style={{ fontSize: 13, color: "rgb(149,117,255)", fontWeight: 500 }}>{initials}</span>
+          <span style={{ fontSize: 14, color: "rgb(149,117,255)", fontWeight: 500 }}>{initials}</span>
         )}
       </a>
 
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4 }}>
-          <span style={{ fontSize: 10, color: "rgba(168,164,157,0.4)", fontFamily: "monospace", flexShrink: 0 }}>
-            #{rank}
-          </span>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 3 }}>
           <a
             href={openSeaUrl}
             target="_blank"
@@ -367,30 +370,29 @@ function CollectorCard({ wallet, rank }: { wallet: CollectorWallet; rank: number
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
               textDecoration: "none",
+              minWidth: 0,
             }}
           >
             {label}
           </a>
-          <span style={{ fontSize: 11, color: "rgba(168,164,157,0.68)", flexShrink: 0, fontWeight: 500 }}>
-            {overlapSummary}
+          <span style={{ fontSize: 10, color: "rgba(168,164,157,0.4)", fontFamily: "monospace", flexShrink: 0 }}>
+            #{rank}
           </span>
         </div>
 
         {secondaryIdentity && (
-          <p style={{ fontSize: 11, color: "rgba(168,164,157,0.62)", marginBottom: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <p style={{ fontSize: 11, color: "rgba(168,164,157,0.62)", marginBottom: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {secondaryIdentity}
           </p>
         )}
 
-        <p style={{ fontSize: 12, color: "rgba(168,164,157,0.6)", marginBottom: 12 }}>
-          {wallet.reason}
-        </p>
+        <CollectionImageStrip collections={wallet.matchedCollections} />
 
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-          {wallet.matchedCollections.map((col) => (
-            <CollectorProofChip key={col.slug || col.name} collection={col} />
-          ))}
-        </div>
+        {why && (
+          <p style={{ fontSize: 12, color: "rgba(168,164,157,0.7)", marginBottom: 10 }}>
+            {why}
+          </p>
+        )}
 
         <a
           href={openSeaUrl}
@@ -398,7 +400,6 @@ function CollectorCard({ wallet, rank }: { wallet: CollectorWallet; rank: number
           rel="noreferrer"
           style={{
             display: "inline-block",
-            marginTop: 10,
             fontSize: 11,
             color: "rgba(168,164,157,0.4)",
             textDecoration: "none",
@@ -411,62 +412,54 @@ function CollectorCard({ wallet, rank }: { wallet: CollectorWallet; rank: number
   );
 }
 
-function CollectorProofChip({ collection }: { collection: MatchedCollection }) {
-  const [imageFailed, setImageFailed] = useState(false);
-  const imageUrl = imageFailed ? null : collection.image_url;
-  const label = collectionProofLabel(collection);
-  const hasHeldCount = Number.isFinite(collection.heldCount);
+function CollectionImageDot({ collection, index }: { collection: MatchedCollection; index: number }) {
+  const [failed, setFailed] = useState(false);
+  const src = failed ? null : collection.image_url ?? null;
 
   return (
     <div
       style={{
+        width: 28,
+        height: 28,
+        borderRadius: "50%",
+        overflow: "hidden",
+        border: "2px solid #161616",
+        marginLeft: index === 0 ? 0 : -8,
+        flexShrink: 0,
+        background: "rgba(149,117,255,0.15)",
         display: "flex",
         alignItems: "center",
-        gap: 5,
-        maxWidth: "100%",
-        minWidth: 0,
-        background: "rgba(255,255,255,0.05)",
-        border: "1px solid rgba(255,255,255,0.07)",
-        borderRadius: 999,
-        padding: "3px 8px 3px 4px",
-        fontSize: 11,
-        color: "rgb(168,164,157)",
+        justifyContent: "center",
       }}
     >
-      {imageUrl ? (
+      {src && (
         // eslint-disable-next-line @next/next-image/no-img-element
         <img
-          src={imageUrl}
+          src={src}
           alt=""
           loading="lazy"
-          onError={() => setImageFailed(true)}
-          style={{
-            width: 14,
-            height: 14,
-            borderRadius: "50%",
-            objectFit: "cover",
-            flexShrink: 0,
-            background: "rgba(255,255,255,0.04)",
-          }}
-        />
-      ) : (
-        <span
-          style={{
-            width: 14,
-            height: 14,
-            borderRadius: "50%",
-            flexShrink: 0,
-            background: "rgba(149,117,255,0.2)",
-          }}
-          aria-hidden="true"
+          onError={() => setFailed(true)}
+          style={{ width: "100%", height: "100%", objectFit: "cover" }}
         />
       )}
-      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {label}
-      </span>
-      {hasHeldCount && (
-        <span style={{ color: "rgba(168,164,157,0.5)", marginLeft: 2, flexShrink: 0 }}>
-          · {formatHeldCount(collection.heldCount)} held
+    </div>
+  );
+}
+
+function CollectionImageStrip({ collections }: { collections: MatchedCollection[] }) {
+  const visible = collections.slice(0, 4);
+  const overflow = collections.length - visible.length;
+
+  if (visible.length === 0) return null;
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
+      {visible.map((col, i) => (
+        <CollectionImageDot key={col.slug || col.name} collection={col} index={i} />
+      ))}
+      {overflow > 0 && (
+        <span style={{ marginLeft: 8, fontSize: 11, color: "rgba(168,164,157,0.55)" }}>
+          +{overflow}
         </span>
       )}
     </div>
