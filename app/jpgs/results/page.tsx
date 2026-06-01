@@ -2,6 +2,8 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import { SelectedCollectionEditor } from "@/components/jpgs/SelectedCollectionEditor";
+import type { OsCollection } from "@/components/jpgs/CollectionSearchInput";
 
 type CollectionRef = {
   slug: string;
@@ -49,12 +51,13 @@ type DiscoverResponse = {
   };
 };
 
+const MAX_SELECTED = 5;
+
 const CONTRACT_IDENTIFIER_RE = /^(?:[a-z0-9_-]+:)?0x[a-f0-9]{40}$/i;
 
 function shortAddress(address: string): string {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
-
 
 function isRawContractIdentifier(value?: string | null): boolean {
   return CONTRACT_IDENTIFIER_RE.test((value ?? "").trim());
@@ -88,10 +91,18 @@ function ResultsInner() {
   const [error, setError] = useState<string | null>(null);
   const [partial, setPartial] = useState(false);
   const [noCollections, setNoCollections] = useState(false);
+  const [initialized, setInitialized] = useState(false);
+
+  // Stable string key — only changes when the set of slugs changes, not on array reference changes.
+  // Used as the useEffect dependency for refetching to prevent infinite loops when metadata is
+  // updated without changing the actual collection set.
+  const slugKey = collections.map((c) => c.slug).join(",");
+
+  // Effect 1: initialization — runs once, reads collections from sessionStorage or URL
   useEffect(() => {
-    async function run() {
-      // Read full collection objects from sessionStorage; fall back to URL slugs
+    function init() {
       let cols: CollectionRef[] | null = null;
+
       try {
         const raw = sessionStorage.getItem("jpgs_selected_collections");
         if (raw) cols = JSON.parse(raw) as CollectionRef[];
@@ -99,38 +110,108 @@ function ResultsInner() {
         // ignore parse errors — fall through to URL fallback
       }
 
+      const slugsParam = params.get("collections") ?? "";
+      const urlSlugs = slugsParam
+        .split(",")
+        .map((s) => decodeURIComponent(s))
+        .filter(Boolean);
+
+      // URL wins when sessionStorage slugs differ (shared-link scenario)
+      if (cols && urlSlugs.length > 0) {
+        const stored = cols.map((c) => c.slug).sort().join(",");
+        const fromUrl = [...urlSlugs].sort().join(",");
+        if (stored !== fromUrl) cols = null;
+      }
+
       if (!cols || cols.length === 0) {
-        const slugsParam = params.get("collections") ?? "";
-        const slugs = slugsParam.split(",").filter(Boolean);
-        if (slugs.length === 0) {
+        if (urlSlugs.length === 0) {
           setNoCollections(true);
           setLoading(false);
           return;
         }
-        cols = slugs.map((slug) => ({ slug, name: slug }));
+        cols = urlSlugs.map((slug) => ({ slug, name: slug }));
       }
 
       setCollections(cols);
+      setInitialized(true);
+    }
 
+    init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Effect 2: fetch collector results whenever the collection set changes
+  useEffect(() => {
+    if (!initialized || collections.length === 0) return;
+
+    let cancelled = false;
+
+    async function run() {
+      setLoading(true);
+      setError(null);
       try {
         const res = await fetch("/api/jpgs/wallets/discover", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ collections: cols }),
+          body: JSON.stringify({ collections }),
         });
         if (!res.ok) throw new Error(`API error ${res.status}`);
-        const data = await res.json() as DiscoverResponse;
+        const data = (await res.json()) as DiscoverResponse;
+        if (cancelled) return;
         setWallets(data.wallets ?? []);
         setPartial(data.debug?.partial ?? false);
+        // Do not write data.collections back to state — the API echoes the input unchanged,
+        // and writing it back creates a new array reference that would change slugKey and
+        // trigger this effect again.
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Discovery failed.");
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Discovery failed.");
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
+
     void run();
+
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [initialized, slugKey]);
+
+  function writeCollectionState(next: CollectionRef[]) {
+    const nextSlugs = next.map((c) => encodeURIComponent(c.slug)).join(",");
+    router.replace(`/jpgs/results?collections=${nextSlugs}`, { scroll: false });
+    try {
+      sessionStorage.setItem("jpgs_selected_collections", JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+  }
+
+  function removeCollection(slug: string) {
+    if (collections.length <= 1) return;
+    const next = collections.filter((c) => c.slug !== slug);
+    setCollections(next);
+    writeCollectionState(next);
+  }
+
+  function addCollection(col: OsCollection) {
+    if (collections.some((c) => c.slug === col.collection)) return;
+    if (collections.length >= MAX_SELECTED) return;
+    const next = [
+      ...collections,
+      {
+        slug: col.collection,
+        name: col.name,
+        image_url: col.image_url,
+        contract: col.contracts?.[0]?.address,
+      },
+    ];
+    setCollections(next);
+    writeCollectionState(next);
+  }
 
   return (
     <>
@@ -143,42 +224,12 @@ function ResultsInner() {
         </p>
 
         {collections.length > 0 && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 32 }}>
-            {collections.map((col) => (
-              <div
-                key={col.slug}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  background: "rgba(255,255,255,0.05)",
-                  border: "1px solid rgba(255,255,255,0.08)",
-                  borderRadius: 999,
-                  padding: "5px 10px 5px 6px",
-                  fontSize: 12,
-                  color: "rgb(240,237,230)",
-                }}
-              >
-                {col.image_url && (
-                  // eslint-disable-next-line @next/next-image/no-img-element
-                  <img
-                    src={col.image_url}
-                    alt=""
-                    style={{ width: 16, height: 16, borderRadius: "50%", objectFit: "cover" }}
-                  />
-                )}
-                {col.name}
-              </div>
-            ))}
-          </div>
+          <SelectedCollectionEditor
+            collections={collections}
+            onRemove={removeCollection}
+            onAdd={addCollection}
+          />
         )}
-
-        <button
-          onClick={() => router.push("/jpgs")}
-          style={{ fontSize: 12, color: "rgba(168,164,157,0.7)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
-        >
-          ← Refine selection
-        </button>
       </section>
 
       <section style={{ maxWidth: 640, margin: "0 auto", padding: "0 24px 80px" }}>
@@ -241,7 +292,7 @@ function ResultsInner() {
             padding: "40px 32px",
             textAlign: "center",
           }}>
-            <p style={{ fontSize: 14, color: "rgb(168,164,157)" }}>No strong overlap found yet. Try a broader or more recognizable collection set.</p>
+            <p style={{ fontSize: 14, color: "rgb(168,164,157)" }}>No collectors found for this mix yet. Try removing one collection or adding a broader signal.</p>
           </div>
         )}
 
@@ -316,7 +367,7 @@ function CollectorCard({ wallet, rank }: { wallet: CollectorWallet; rank: number
         }}
       >
         {avatarSrc ? (
-          // eslint-disable-next-line @next/next-image/no-img-element
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={avatarSrc}
             alt=""
@@ -403,7 +454,7 @@ function CollectionImageDot({ collection, index, visibleCount }: { collection: M
         }}
       >
         {src && (
-          // eslint-disable-next-line @next/next-image/no-img-element
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={src}
             alt=""

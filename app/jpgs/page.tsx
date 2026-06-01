@@ -1,18 +1,9 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-
-type OsCollection = {
-  collection: string;
-  name: string;
-  description?: string;
-  image_url?: string;
-  safelist_request_status?: string;
-  safelist_status?: string;
-  contracts?: Array<{ address: string }>;
-  opensea_url?: string;
-};
+import { CollectionSearchInput } from "@/components/jpgs/CollectionSearchInput";
+import type { OsCollection } from "@/components/jpgs/CollectionSearchInput";
 
 const MAX_SELECTED = 5;
 
@@ -51,53 +42,14 @@ const PRESET_SETS: PresetSet[] = [
 ];
 
 export default function JpgsPage() {
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<OsCollection[]>([]);
   const [selected, setSelected] = useState<OsCollection[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [showSelectHint, setShowSelectHint] = useState(false);
   const [presetLoadingSlugs, setPresetLoadingSlugs] = useState<Set<string>>(new Set());
-  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [searchState, setSearchState] = useState({ hasResults: false, showSelectHint: false });
+  const [searchResetKey, setSearchResetKey] = useState(0);
   const router = useRouter();
-
-  const runSearch = useCallback(async (q: string) => {
-    if (!q.trim()) { setResults([]); setShowSelectHint(false); return; }
-    setSearching(true);
-    try {
-      const res = await fetch(`/api/jpgs/collections/search?q=${encodeURIComponent(q)}`);
-      const data = (await res.json()) as { collections?: OsCollection[] };
-      setResults(data.collections ?? []);
-      setShowSelectHint(false);
-    } finally {
-      setSearching(false);
-    }
-  }, []);
-
-  function handleInput(e: React.ChangeEvent<HTMLInputElement>) {
-    const val = e.target.value;
-    setQuery(val);
-    setShowSelectHint(false);
-    if (debounce.current) clearTimeout(debounce.current);
-    debounce.current = setTimeout(() => runSearch(val), 350);
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key !== "Enter") return;
-    e.preventDefault();
-    // Only select when there is exactly one result (unambiguous intent)
-    if (results.length === 1) {
-      selectCollection(results[0]);
-    } else if (results.length !== 1 && query.trim()) {
-      // Multiple results or no results: prompt the user to pick a row
-      setShowSelectHint(true);
-    }
-  }
 
   function selectCollection(col: OsCollection) {
     toggleCollection(col);
-    setQuery("");
-    setResults([]);
-    setShowSelectHint(false);
   }
 
   function toggleCollection(col: OsCollection) {
@@ -110,10 +62,6 @@ export default function JpgsPage() {
     });
   }
 
-  function isSelected(col: OsCollection) {
-    return selected.some((c) => c.collection === col.collection);
-  }
-
   async function applySet(set: PresetSet) {
     const capped = set.collections.slice(0, MAX_SELECTED);
     const placeholders: OsCollection[] = capped.map((c) => ({
@@ -122,9 +70,7 @@ export default function JpgsPage() {
       image_url: "",
     }));
     setSelected(placeholders);
-    setQuery("");
-    setResults([]);
-    setShowSelectHint(false);
+    setSearchResetKey((k) => k + 1);
     setPresetLoadingSlugs(new Set(capped.map((c) => c.slug)));
 
     await Promise.all(
@@ -164,14 +110,11 @@ export default function JpgsPage() {
         })),
       ),
     );
-    const slugs = selected.map((c) => c.collection).join(",");
-    router.push(`/jpgs/results?collections=${encodeURIComponent(slugs)}`);
+    const slugs = selected.map((c) => encodeURIComponent(c.collection)).join(",");
+    router.push(`/jpgs/results?collections=${slugs}`);
   }
 
-  const showDropdown = results.length > 0;
   const atMax = selected.length >= MAX_SELECTED;
-  const verifiedStatus = (col: OsCollection) =>
-    col.safelist_status === "verified" || col.safelist_request_status === "verified";
 
   return (
     <main className="min-h-screen" style={{ background: "#0e0e0e", color: "rgb(240,237,230)" }}>
@@ -190,39 +133,16 @@ export default function JpgsPage() {
 
       {/* Search */}
       <section style={{ maxWidth: 640, margin: "0 auto", padding: "0 24px" }}>
-        <div style={{ position: "relative" }}>
-          <input
-            type="text"
-            value={query}
-            onChange={handleInput}
-            onKeyDown={handleKeyDown}
-            placeholder="Search collections…"
-            style={{
-              width: "100%",
-              background: "#1a1a1a",
-              border: "1px solid rgba(255,255,255,0.1)",
-              borderRadius: 12,
-              padding: "16px 20px",
-              color: "rgb(240,237,230)",
-              fontSize: 14,
-              outline: "none",
-              boxSizing: "border-box",
-            }}
-            onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(149,117,255,0.5)")}
-            onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)")}
-          />
-          {searching && (
-            <div style={{
-              position: "absolute", right: 16, top: "50%", transform: "translateY(-50%)",
-              width: 16, height: 16, border: "1.5px solid rgb(149,117,255)",
-              borderTopColor: "transparent", borderRadius: "50%",
-              animation: "spin 0.7s linear infinite",
-            }} />
-          )}
-        </div>
+        <CollectionSearchInput
+          key={searchResetKey}
+          onSelect={selectCollection}
+          atMax={atMax}
+          selectedSlugs={new Set(selected.map((c) => c.collection))}
+          onStateChange={setSearchState}
+        />
 
         {/* Picker helper copy — contextual hint below search bar */}
-        {!showDropdown && !showSelectHint && (
+        {!searchState.hasResults && !searchState.showSelectHint && (
           <p style={{ fontSize: 12, color: "rgba(168,164,157,0.5)", marginTop: 10, paddingLeft: 2 }}>
             {selected.length === 0
               ? "Search for collections, then choose the ones that feel like your taste."
@@ -232,15 +152,8 @@ export default function JpgsPage() {
           </p>
         )}
 
-        {/* "Select from list" hint shown when Enter is pressed with no unambiguous selection */}
-        {showSelectHint && (
-          <p style={{ fontSize: 12, color: "rgb(149,117,255)", marginTop: 8, paddingLeft: 4, opacity: 0.8 }}>
-            Select a collection from the list.
-          </p>
-        )}
-
         {/* Try a set */}
-        {!showDropdown && (
+        {!searchState.hasResults && (
           <div style={{ marginTop: 20 }}>
             <p style={{ fontSize: 11, letterSpacing: "0.15em", textTransform: "uppercase", color: "rgba(168,164,157,0.4)", marginBottom: 10 }}>
               Try a set
@@ -275,63 +188,6 @@ export default function JpgsPage() {
             </div>
           </div>
         )}
-
-        {/* Search results dropdown — only populated from real API result objects */}
-        {showDropdown && (
-          <div style={{
-            marginTop: 4,
-            background: "#161616",
-            border: "1px solid rgba(255,255,255,0.08)",
-            borderRadius: 12,
-            overflow: "hidden",
-          }}>
-            {results.map((col) => (
-              <button
-                key={col.collection}
-                onClick={() => selectCollection(col)}
-                style={{
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  padding: "12px 16px",
-                  textAlign: "left",
-                  background: isSelected(col) ? "rgba(149,117,255,0.08)" : "transparent",
-                  border: "none",
-                  borderBottom: "1px solid rgba(255,255,255,0.05)",
-                  color: "rgb(240,237,230)",
-                  cursor: atMax && !isSelected(col) ? "not-allowed" : "pointer",
-                  opacity: atMax && !isSelected(col) ? 0.5 : 1,
-                }}
-              >
-                {col.image_url ? (
-                  // eslint-disable-next-line @next/next-image/no-img-element
-                  <img
-                    src={col.image_url}
-                    alt=""
-                    style={{ width: 32, height: 32, borderRadius: 6, objectFit: "cover", flexShrink: 0 }}
-                  />
-                ) : (
-                  <div style={{ width: 32, height: 32, borderRadius: 6, background: "rgba(255,255,255,0.08)", flexShrink: 0 }} />
-                )}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {col.name}
-                  </div>
-                  <div style={{ fontSize: 12, color: "rgb(168,164,157)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>
-                    {col.collection}
-                    {verifiedStatus(col) && (
-                      <span style={{ marginLeft: 6, color: "rgb(149,117,255)", opacity: 0.8 }}>✓</span>
-                    )}
-                  </div>
-                </div>
-                {isSelected(col) && (
-                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: "rgb(149,117,255)", flexShrink: 0 }} />
-                )}
-              </button>
-            ))}
-          </div>
-        )}
       </section>
 
       {/* Selected taste set + CTA */}
@@ -359,7 +215,7 @@ export default function JpgsPage() {
                   }}
                 >
                   {col.image_url ? (
-                    // eslint-disable-next-line @next/next-image/no-img-element
+                    // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={col.image_url}
                       alt=""
@@ -446,7 +302,6 @@ export default function JpgsPage() {
       </footer>
 
       <style>{`
-        @keyframes spin { to { transform: translateY(-50%) rotate(360deg); } }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
       `}</style>
     </main>
