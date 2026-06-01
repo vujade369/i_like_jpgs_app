@@ -401,7 +401,7 @@ function CollectorCard({ wallet, rank }: { wallet: CollectorWallet; rank: number
           style={{
             display: "inline-block",
             fontSize: 11,
-            color: "rgba(168,164,157,0.4)",
+            color: "rgba(168,164,157,0.55)",
             textDecoration: "none",
           }}
         >
@@ -412,35 +412,71 @@ function CollectorCard({ wallet, rank }: { wallet: CollectorWallet; rank: number
   );
 }
 
-function CollectionImageDot({ collection, index }: { collection: MatchedCollection; index: number }) {
+function CollectionImageDot({ collection, index, visibleCount }: { collection: MatchedCollection; index: number; visibleCount: number }) {
   const [failed, setFailed] = useState(false);
   const src = failed ? null : collection.image_url ?? null;
+  const showBadge = collection.heldCount > 1;
 
   return (
     <div
+      title={showBadge ? `${collection.name} · ${collection.heldCount} held` : collection.name}
       style={{
-        width: 28,
-        height: 28,
-        borderRadius: "50%",
-        overflow: "hidden",
-        border: "2px solid #161616",
+        position: "relative",
+        width: 32,
+        height: 32,
         marginLeft: index === 0 ? 0 : -8,
         flexShrink: 0,
-        background: "rgba(149,117,255,0.15)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
+        zIndex: visibleCount - index,
       }}
     >
-      {src && (
-        // eslint-disable-next-line @next/next-image/no-img-element
-        <img
-          src={src}
-          alt=""
-          loading="lazy"
-          onError={() => setFailed(true)}
-          style={{ width: "100%", height: "100%", objectFit: "cover" }}
-        />
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          borderRadius: "50%",
+          overflow: "hidden",
+          border: "2px solid #161616",
+          background: "rgba(149,117,255,0.15)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        {src && (
+          // eslint-disable-next-line @next/next-image/no-img-element
+          <img
+            src={src}
+            alt=""
+            loading="lazy"
+            onError={() => setFailed(true)}
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          />
+        )}
+      </div>
+      {showBadge && (
+        <span
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            bottom: -4,
+            right: -4,
+            minWidth: 14,
+            height: 14,
+            borderRadius: 7,
+            background: "rgba(14,14,14,0.9)",
+            border: "1px solid rgba(255,255,255,0.10)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "0 3px",
+            fontSize: 8,
+            fontFamily: "monospace",
+            color: "rgba(168,164,157,0.75)",
+            lineHeight: 1,
+          }}
+        >
+          {collection.heldCount}
+        </span>
       )}
     </div>
   );
@@ -455,7 +491,7 @@ function CollectionImageStrip({ collections }: { collections: MatchedCollection[
   return (
     <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
       {visible.map((col, i) => (
-        <CollectionImageDot key={col.slug || col.name} collection={col} index={i} />
+        <CollectionImageDot key={col.slug || col.name} collection={col} index={i} visibleCount={visible.length} />
       ))}
       {overflow > 0 && (
         <span style={{ marginLeft: 8, fontSize: 11, color: "rgba(168,164,157,0.55)" }}>
