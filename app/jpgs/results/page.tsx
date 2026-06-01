@@ -88,8 +88,6 @@ function ResultsInner() {
   const [error, setError] = useState<string | null>(null);
   const [partial, setPartial] = useState(false);
   const [noCollections, setNoCollections] = useState(false);
-  const [hideInstitutional, setHideInstitutional] = useState(false);
-
   useEffect(() => {
     async function run() {
       // Read full collection objects from sessionStorage; fall back to URL slugs
@@ -133,12 +131,6 @@ function ResultsInner() {
     void run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const sourceWallets = wallets;
-  const visibleWallets = hideInstitutional
-    ? sourceWallets.filter((wallet) => !wallet.isInstitutionalWallet)
-    : sourceWallets;
-  const hiddenInstitutionalCount = sourceWallets.length - visibleWallets.length;
 
   return (
     <>
@@ -255,38 +247,13 @@ function ResultsInner() {
 
         {!loading && !noCollections && !error && wallets.length > 0 && (
           <>
-            <label
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                marginBottom: 12,
-                color: "rgba(168,164,157,0.72)",
-                fontSize: 12,
-                cursor: "pointer",
-                userSelect: "none",
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={hideInstitutional}
-                onChange={(event) => setHideInstitutional(event.target.checked)}
-                style={{ accentColor: "rgb(149,117,255)" }}
-              />
-              Hide institutional wallets
-            </label>
-            {hiddenInstitutionalCount > 0 && (
-              <p style={{ fontSize: 12, color: "rgba(168,164,157,0.5)", marginBottom: 16 }}>
-                Hiding {hiddenInstitutionalCount} likely institutional wallets.
-              </p>
-            )}
             {partial && (
               <p style={{ fontSize: 12, color: "rgba(168,164,157,0.5)", marginBottom: 16 }}>
                 Showing the strongest matches found so far.
               </p>
             )}
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {visibleWallets.map((wallet, index) => (
+              {wallets.map((wallet, index) => (
                 <CollectorCard key={wallet.address} wallet={wallet} rank={index + 1} />
               ))}
             </div>
@@ -294,7 +261,11 @@ function ResultsInner() {
         )}
       </section>
 
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .ilj-collector-link { transition: opacity 0.15s; }
+        .ilj-collector-link:hover { opacity: 0.7; }
+      `}</style>
     </>
   );
 }
@@ -330,6 +301,7 @@ function CollectorCard({ wallet, rank }: { wallet: CollectorWallet; rank: number
         href={openSeaUrl}
         target="_blank"
         rel="noreferrer"
+        className="ilj-collector-link"
         style={{
           flexShrink: 0,
           width: 56,
@@ -362,6 +334,7 @@ function CollectorCard({ wallet, rank }: { wallet: CollectorWallet; rank: number
             href={openSeaUrl}
             target="_blank"
             rel="noreferrer"
+            className="ilj-collector-link"
             style={{
               fontSize: 14,
               fontWeight: 500,
@@ -394,19 +367,6 @@ function CollectorCard({ wallet, rank }: { wallet: CollectorWallet; rank: number
           </p>
         )}
 
-        <a
-          href={openSeaUrl}
-          target="_blank"
-          rel="noreferrer"
-          style={{
-            display: "inline-block",
-            fontSize: 11,
-            color: "rgba(168,164,157,0.55)",
-            textDecoration: "none",
-          }}
-        >
-          View on OpenSea
-        </a>
       </div>
     </div>
   );
@@ -422,9 +382,9 @@ function CollectionImageDot({ collection, index, visibleCount }: { collection: M
       title={showBadge ? `${collection.name} · ${collection.heldCount} held` : collection.name}
       style={{
         position: "relative",
-        width: 32,
-        height: 32,
-        marginLeft: index === 0 ? 0 : -8,
+        width: 44,
+        height: 44,
+        marginLeft: index === 0 ? 0 : -12,
         flexShrink: 0,
         zIndex: visibleCount - index,
       }}
@@ -458,18 +418,18 @@ function CollectionImageDot({ collection, index, visibleCount }: { collection: M
           aria-hidden="true"
           style={{
             position: "absolute",
-            bottom: -4,
-            right: -4,
-            minWidth: 14,
-            height: 14,
-            borderRadius: 7,
+            bottom: -5,
+            right: -5,
+            minWidth: 17,
+            height: 17,
+            borderRadius: 9,
             background: "rgba(14,14,14,0.9)",
             border: "1px solid rgba(255,255,255,0.10)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             padding: "0 3px",
-            fontSize: 8,
+            fontSize: 9,
             fontFamily: "monospace",
             color: "rgba(168,164,157,0.75)",
             lineHeight: 1,
