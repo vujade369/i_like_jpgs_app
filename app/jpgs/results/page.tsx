@@ -8,6 +8,7 @@ import {
 } from "@/components/collectors/SharedCollectionsStrip";
 import { SelectedCollectionEditor } from "@/components/jpgs/SelectedCollectionEditor";
 import type { OsCollection } from "@/components/jpgs/CollectionSearchInput";
+import { MAX_SELECTED_COLLECTIONS } from "@/lib/jpgs/limits";
 
 type CollectionRef = {
   slug: string;
@@ -54,8 +55,6 @@ type DiscoverResponse = {
     errors: string[];
   };
 };
-
-const MAX_SELECTED = 5;
 
 const CONTRACT_IDENTIFIER_RE = /^(?:[a-z0-9_-]+:)?0x[a-f0-9]{40}$/i;
 
@@ -133,10 +132,11 @@ function ResultsInner() {
       }
 
       const slugsParam = params.get("collections") ?? "";
-      const urlSlugs = slugsParam
+      const rawUrlSlugs = slugsParam
         .split(",")
         .map((s) => decodeURIComponent(s))
         .filter(Boolean);
+      const urlSlugs = rawUrlSlugs.slice(0, MAX_SELECTED_COLLECTIONS);
 
       // URL wins when sessionStorage slugs differ (shared-link scenario)
       if (cols && urlSlugs.length > 0) {
@@ -154,7 +154,10 @@ function ResultsInner() {
         cols = urlSlugs.map((slug) => ({ slug, name: slug }));
       }
 
+      const wasClamped = cols.length > MAX_SELECTED_COLLECTIONS || rawUrlSlugs.length > MAX_SELECTED_COLLECTIONS;
+      cols = cols.slice(0, MAX_SELECTED_COLLECTIONS);
       setCollections(cols);
+      if (wasClamped) writeCollectionState(cols);
       setInitialized(true);
     }
 
@@ -221,7 +224,7 @@ function ResultsInner() {
 
   function addCollection(col: OsCollection) {
     if (collections.some((c) => c.slug === col.collection)) return;
-    if (collections.length >= MAX_SELECTED) return;
+    if (collections.length >= MAX_SELECTED_COLLECTIONS) return;
     const next = [
       ...collections,
       {
@@ -250,6 +253,7 @@ function ResultsInner() {
             collections={collections}
             onRemove={removeCollection}
             onAdd={addCollection}
+            maxCollections={MAX_SELECTED_COLLECTIONS}
           />
         )}
       </section>

@@ -1,0 +1,1 @@
+export const MAX_SELECTED_COLLECTIONS = 10;

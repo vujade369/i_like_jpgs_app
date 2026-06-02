@@ -10,7 +10,8 @@ import {
 } from "@/lib/jpgs/institutionalWallets";
 
 const MAX_COLLECTIONS = 22;
-const MAX_COLLECTORS = 20;
+const MAX_DISCOVERED_COLLECTORS = 20;
+const MAX_RETURNED_COLLECTORS = 10;
 const MIN_SHARED_COLLECTIONS = 2;
 const WALLET_RE = /^0x[a-fA-F0-9]{40}$/;
 
@@ -91,7 +92,7 @@ export async function POST(req: NextRequest) {
   const matches = discovery.wallets
     .filter((wallet) => !excludedWallets.has(wallet.address.toLowerCase()))
     .filter((wallet) => wallet.matchedCollectionCount >= MIN_SHARED_COLLECTIONS)
-    .slice(0, MAX_COLLECTORS);
+    .slice(0, MAX_DISCOVERED_COLLECTORS);
   const collectionsWithUsableHolders = discovery.debug.collectionsFetched.filter(
     (collection) => collection.fetchedCount > 0,
   );
@@ -105,10 +106,10 @@ export async function POST(req: NextRequest) {
 
   const hydration = await hydrateAccountIdentities(
     matches.map((wallet) => wallet.address),
-    { limit: MAX_COLLECTORS },
+    { limit: MAX_DISCOVERED_COLLECTORS },
   );
 
-  const collectors = matches.map((wallet) => {
+  const collectors = matches.slice(0, MAX_RETURNED_COLLECTORS).map((wallet) => {
     const identity = hydration.identities.get(wallet.address.toLowerCase());
     const profileUrl = identity?.openSeaUrl ?? identity?.openseaProfileUrl ?? `https://opensea.io/${wallet.address}`;
     const institutionalCandidate = {
@@ -156,6 +157,7 @@ export async function POST(req: NextRequest) {
             collectionsAttempted: collections.length,
             collectionsReceived,
             maxCollections: MAX_COLLECTIONS,
+            maxReturnedCollectors: MAX_RETURNED_COLLECTORS,
             collectionsWithUsableHolders: collectionsWithUsableHolders.length,
             partial: discovery.debug.partial,
             errors: discovery.debug.errors,

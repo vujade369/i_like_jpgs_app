@@ -34,12 +34,13 @@ export function SiteNav() {
         style={{
           maxWidth: 1120,
           margin: "0 auto",
-          padding: "0 24px",
+          padding: "0 clamp(16px, 4vw, 24px)",
           height: "100%",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          gap: 24,
+          gap: "clamp(10px, 3vw, 24px)",
+          minWidth: 0,
         }}
       >
         <Link
@@ -59,7 +60,9 @@ export function SiteNav() {
             WebkitOverflowScrolling: "touch",
             scrollbarWidth: "none",
             msOverflowStyle: "none",
-            flexShrink: 0,
+            flex: "1 1 auto",
+            justifyContent: "flex-end",
+            minWidth: 0,
           }}
         >
           {NAV_ITEMS.map(({ label, href }) => {
@@ -71,7 +74,7 @@ export function SiteNav() {
                 style={{
                   display: "block",
                   whiteSpace: "nowrap",
-                  padding: "6px 12px",
+                  padding: "6px clamp(7px, 2.4vw, 12px)",
                   borderRadius: 6,
                   fontSize: 13,
                   letterSpacing: "0.02em",

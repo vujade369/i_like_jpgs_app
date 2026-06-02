@@ -2,6 +2,7 @@
 
 import { CollectionSearchInput } from "./CollectionSearchInput";
 import type { OsCollection } from "./CollectionSearchInput";
+import { MAX_SELECTED_COLLECTIONS } from "@/lib/jpgs/limits";
 
 type CollectionRef = {
   slug: string;
@@ -17,7 +18,7 @@ type Props = {
   maxCollections?: number;
 };
 
-export function SelectedCollectionEditor({ collections, onRemove, onAdd, maxCollections = 5 }: Props) {
+export function SelectedCollectionEditor({ collections, onRemove, onAdd, maxCollections = MAX_SELECTED_COLLECTIONS }: Props) {
   const atMax = collections.length >= maxCollections;
   const canRemove = collections.length > 1;
   const selectedSlugs = new Set(collections.map((c) => c.slug));
@@ -95,24 +96,14 @@ export function SelectedCollectionEditor({ collections, onRemove, onAdd, maxColl
         ))}
       </div>
 
-      {!atMax ? (
-        <CollectionSearchInput
-          onSelect={onAdd}
-          atMax={atMax}
-          selectedSlugs={selectedSlugs}
-          compact
-          placeholder="Add a collection…"
-        />
-      ) : (
-        <p style={{
-          fontSize: 11,
-          color: "rgba(168,164,157,0.4)",
-          marginTop: 4,
-          paddingLeft: 2,
-        }}>
-          Maximum 5. Remove a collection to add another.
-        </p>
-      )}
+      <CollectionSearchInput
+        onSelect={onAdd}
+        atMax={atMax}
+        selectedSlugs={selectedSlugs}
+        compact
+        placeholder="Add a collection…"
+      />
+
     </div>
   );
 }

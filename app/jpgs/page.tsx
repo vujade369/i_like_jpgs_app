@@ -4,8 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CollectionSearchInput } from "@/components/jpgs/CollectionSearchInput";
 import type { OsCollection } from "@/components/jpgs/CollectionSearchInput";
-
-const MAX_SELECTED = 5;
+import { MAX_SELECTED_COLLECTIONS } from "@/lib/jpgs/limits";
 
 type PresetCollection = { slug: string; name: string; image_url: string };
 type PresetSet = { label: string; collections: PresetCollection[] };
@@ -57,13 +56,13 @@ export default function JpgsPage() {
       if (prev.some((c) => c.collection === col.collection)) {
         return prev.filter((c) => c.collection !== col.collection);
       }
-      if (prev.length >= MAX_SELECTED) return prev;
+      if (prev.length >= MAX_SELECTED_COLLECTIONS) return prev;
       return [...prev, col];
     });
   }
 
   async function applySet(set: PresetSet) {
-    const capped = set.collections.slice(0, MAX_SELECTED);
+    const capped = set.collections.slice(0, MAX_SELECTED_COLLECTIONS);
     const placeholders: OsCollection[] = capped.map((c) => ({
       collection: c.slug,
       name: c.name,
@@ -114,7 +113,7 @@ export default function JpgsPage() {
     router.push(`/jpgs/results?collections=${slugs}`);
   }
 
-  const atMax = selected.length >= MAX_SELECTED;
+  const atMax = selected.length >= MAX_SELECTED_COLLECTIONS;
 
   return (
     <main className="min-h-screen" style={{ background: "#0e0e0e", color: "rgb(240,237,230)" }}>
@@ -271,7 +270,7 @@ export default function JpgsPage() {
 
           {atMax && (
             <p style={{ fontSize: 12, color: "rgba(168,164,157,0.45)", marginBottom: 20, paddingLeft: 2 }}>
-              Maximum 5 collections. Remove one to add another.
+              Maximum 10. Remove a collection to add another.
             </p>
           )}
 

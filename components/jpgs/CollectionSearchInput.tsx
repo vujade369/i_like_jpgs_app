@@ -87,6 +87,7 @@ export function CollectionSearchInput({
   }
 
   function handleSelect(col: OsCollection) {
+    if (atMax && !selectedSlugs.has(col.collection)) return;
     onSelect(col);
     setQuery("");
     setResults([]);
@@ -130,6 +131,7 @@ export function CollectionSearchInput({
           onChange={handleInput}
           onKeyDown={handleKeyDown}
           placeholder={effectivePlaceholder}
+          aria-describedby={atMax ? "jpgs-collection-limit-message" : undefined}
           style={inputBase}
           onFocus={(e) => {
             if (!compact) e.currentTarget.style.borderColor = "rgba(149,117,255,0.5)";
@@ -169,6 +171,20 @@ export function CollectionSearchInput({
         </p>
       )}
 
+      {atMax && (
+        <p
+          id="jpgs-collection-limit-message"
+          style={{
+            fontSize: 11,
+            color: "rgba(168,164,157,0.45)",
+            marginTop: 8,
+            paddingLeft: compact ? 2 : 4,
+          }}
+        >
+          Maximum 10. Remove a collection to add another.
+        </p>
+      )}
+
       {showDropdown && (
         <div style={{
           marginTop: 4,
@@ -184,6 +200,7 @@ export function CollectionSearchInput({
               <button
                 key={col.collection}
                 onClick={() => { if (!disabled) handleSelect(col); }}
+                aria-disabled={disabled}
                 style={{
                   width: "100%",
                   display: "flex",

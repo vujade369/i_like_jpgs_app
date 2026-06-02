@@ -133,7 +133,8 @@ type CollectorProofCollection = SimilarCollector["matchedCollections"][number];
 const MAX_WALLETS = 2;
 const SHOW_TOP_ARTISTS = false;
 const SIMILAR_COLLECTOR_COLLECTION_LIMIT = 22;
-const SIMILAR_COLLECTOR_DISPLAY_LIMIT = 5;
+const SIMILAR_COLLECTOR_COLLAPSED_DISPLAY_LIMIT = 5;
+const SIMILAR_COLLECTOR_EXPANDED_DISPLAY_LIMIT = 10;
 const MIN_SIMILAR_COLLECTOR_SHARED_COLLECTIONS = 2;
 const WALLET_SIGNAL_BAR_SCALE_MAX = 30;
 const NUMBER_FORMATTER = new Intl.NumberFormat("en-US");
@@ -203,6 +204,7 @@ export default function WalletReadPage() {
   const [selectedSuggestion, setSelectedSuggestion] = useState<WalletSuggestion | null>(null);
   const [similarCollectors, setSimilarCollectors] = useState<SimilarCollector[]>([]);
   const [hideInstitutional, setHideInstitutional] = useState(false);
+  const [showAllNearbyCollectors, setShowAllNearbyCollectors] = useState(false);
   const requestSeq = useRef(0);
   const didHydrateUrl = useRef(false);
 
@@ -335,6 +337,7 @@ export default function WalletReadPage() {
           const meaningfulCollectors = (data.collectors ?? [])
             .filter((collector) => collector.sharedCollectionCount >= MIN_SIMILAR_COLLECTOR_SHARED_COLLECTIONS);
           setSimilarCollectors(meaningfulCollectors);
+          setShowAllNearbyCollectors(false);
         }
       } catch {
         if (!controller.signal.aborted) setSimilarCollectors([]);
@@ -394,10 +397,18 @@ export default function WalletReadPage() {
   const atWalletLimit = walletSet.length >= MAX_WALLETS;
   const activeReadLabel = readLabelForView(walletSet, activeView);
   const sourceCollectors = similarCollectors;
-  const visibleCollectors = (hideInstitutional
+  const visibleCollectorPool = (hideInstitutional
     ? sourceCollectors.filter((collector) => !collector.isInstitutionalWallet)
     : sourceCollectors
-  ).slice(0, SIMILAR_COLLECTOR_DISPLAY_LIMIT);
+  ).slice(0, SIMILAR_COLLECTOR_EXPANDED_DISPLAY_LIMIT);
+  const visibleCollectors = showAllNearbyCollectors
+    ? visibleCollectorPool
+    : visibleCollectorPool.slice(0, SIMILAR_COLLECTOR_COLLAPSED_DISPLAY_LIMIT);
+  const remainingVisibleCollectorCount = Math.min(
+    SIMILAR_COLLECTOR_COLLAPSED_DISPLAY_LIMIT,
+    Math.max(0, visibleCollectorPool.length - SIMILAR_COLLECTOR_COLLAPSED_DISPLAY_LIMIT),
+  );
+  const hasMoreVisibleCollectors = remainingVisibleCollectorCount > 0;
   const hiddenInstitutionalCollectorCount = hideInstitutional
     ? sourceCollectors.filter((c) => c.isInstitutionalWallet).length
     : 0;
@@ -435,7 +446,7 @@ export default function WalletReadPage() {
             ariaLabel="Wallet, ENS, OpenSea username, or OpenSea profile URL"
             disabled={atWalletLimit}
             name="wallet"
-            containerStyle={{ flex: "1 1 360px" }}
+            containerStyle={{ flex: "1 1 min(100%, 360px)", minWidth: 0 }}
           />
           <button
             type="submit"
@@ -780,10 +791,31 @@ export default function WalletReadPage() {
                     }
                   `}</style>
                   <div style={similarCollectorGridStyle}>
-                    {visibleCollectors.map((collector, index) => (
-                      <SimilarCollectorCard key={collector.address} collector={collector} rank={index + 1} />
+                    {visibleCollectors.map((collector) => (
+                      <SimilarCollectorCard
+                        key={collector.address}
+                        collector={collector}
+                        rank={sourceCollectors.findIndex((item) => item.address === collector.address) + 1}
+                      />
                     ))}
                   </div>
+                  {hasMoreVisibleCollectors && (
+                    <button
+                      type="button"
+                      aria-expanded={showAllNearbyCollectors}
+                      aria-label={
+                        showAllNearbyCollectors
+                          ? "Show fewer nearby collectors"
+                          : `Show ${remainingVisibleCollectorCount} more nearby collectors`
+                      }
+                      onClick={() => setShowAllNearbyCollectors((current) => !current)}
+                      style={similarCollectorRevealButtonStyle}
+                    >
+                      {showAllNearbyCollectors
+                        ? "Show fewer collectors"
+                        : `Show ${remainingVisibleCollectorCount} more collectors`}
+                    </button>
+                  )}
                 </Panel>
               )}
             </div>
@@ -1816,6 +1848,20 @@ const walletSignalBarFillStyle: React.CSSProperties = {
 const similarCollectorGridStyle: React.CSSProperties = {
   display: "grid",
   gap: "clamp(10px, 1.8vw, 12px)",
+};
+
+const similarCollectorRevealButtonStyle: React.CSSProperties = {
+  justifySelf: "start",
+  marginTop: 12,
+  border: "1px solid rgba(149,117,255,0.22)",
+  borderRadius: 999,
+  padding: "5px 10px 6px",
+  background: "rgba(149,117,255,0.075)",
+  color: "rgba(223,214,255,0.9)",
+  font: "inherit",
+  fontSize: 11,
+  lineHeight: 1.1,
+  cursor: "pointer",
 };
 
 const similarCollectorAvatarLinkStyle: React.CSSProperties = {
