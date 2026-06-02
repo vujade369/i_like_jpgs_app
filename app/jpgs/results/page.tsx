@@ -73,13 +73,12 @@ function collectionProofLabel(collection: Pick<MatchedCollection, "name" | "slug
 }
 
 function whyLine(collections: MatchedCollection[]): string {
-  const count = collections.length;
-  if (count === 0) return "";
-  const a = collectionProofLabel(collections[0]);
-  if (count === 1) return `Overlaps on ${a}`;
-  const b = collectionProofLabel(collections[1]);
-  if (count === 2) return `Overlaps on ${a} and ${b}`;
-  return `Overlaps on ${a}, ${b}, and ${count - 2} more`;
+  if (collections.length === 0) return "";
+  const sorted = collections.slice().sort((a, b) => b.heldCount - a.heldCount);
+  const names = sorted.map((c) => collectionProofLabel(c));
+  if (names.length === 1) return `Overlaps on ${names[0]}`;
+  if (names.length === 2) return `Overlaps on ${names[0]} and ${names[1]}`;
+  return `Overlaps on ${names.join(", ")}`;
 }
 
 function ResultsInner() {
@@ -435,7 +434,6 @@ function CollectionImageDot({ collection, index, visibleCount }: { collection: M
         position: "relative",
         width: 44,
         height: 44,
-        marginLeft: index === 0 ? 0 : -12,
         flexShrink: 0,
         zIndex: visibleCount - index,
       }}
@@ -494,21 +492,15 @@ function CollectionImageDot({ collection, index, visibleCount }: { collection: M
 }
 
 function CollectionImageStrip({ collections }: { collections: MatchedCollection[] }) {
-  const visible = collections.slice(0, 4);
-  const overflow = collections.length - visible.length;
+  const sorted = collections.slice().sort((a, b) => b.heldCount - a.heldCount);
 
-  if (visible.length === 0) return null;
+  if (sorted.length === 0) return null;
 
   return (
-    <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
-      {visible.map((col, i) => (
-        <CollectionImageDot key={col.slug || col.name} collection={col} index={i} visibleCount={visible.length} />
+    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginBottom: 8 }}>
+      {sorted.map((col, i) => (
+        <CollectionImageDot key={col.slug || col.name} collection={col} index={i} visibleCount={sorted.length} />
       ))}
-      {overflow > 0 && (
-        <span style={{ marginLeft: 8, fontSize: 11, color: "rgba(168,164,157,0.55)" }}>
-          +{overflow}
-        </span>
-      )}
     </div>
   );
 }
