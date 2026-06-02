@@ -126,7 +126,6 @@ type SimilarCollectorsResponse = {
 
 type CollectorProofCollection = SimilarCollector["matchedCollections"][number];
 
-const SAMPLE_WALLET = "0x16f3d833bb91aebb5066884501242d8b3c3b5e61";
 const MAX_WALLETS = 2;
 const SHOW_TOP_ARTISTS = false;
 const SIMILAR_COLLECTOR_COLLECTION_LIMIT = 22;
@@ -343,13 +342,6 @@ export default function WalletReadPage() {
     void readWalletSet(nextInputs);
   }
 
-  function useSampleWallet() {
-    setWallet("");
-    setResolvedWallet("");
-    setSelectedSuggestion(null);
-    void readWalletSet([SAMPLE_WALLET]);
-  }
-
   function handleWalletChange(value: string) {
     setWallet(value);
     setResolvedWallet("");
@@ -436,22 +428,6 @@ export default function WalletReadPage() {
             }}
           >
             {state === "loading" ? "Reading…" : atWalletLimit ? "Limit reached" : "Add wallet"}
-          </button>
-          <button
-            type="button"
-            onClick={useSampleWallet}
-            disabled={state === "loading"}
-            style={{
-              background: "transparent",
-              border: "1px solid var(--jpgs-border)",
-              borderRadius: 8,
-              padding: "0 14px",
-              color: "var(--jpgs-muted)",
-              fontSize: 14,
-              minHeight: 50,
-            }}
-          >
-            Try a sample
           </button>
         </form>
 
@@ -714,31 +690,6 @@ export default function WalletReadPage() {
                     title="Collectors nearby"
                     detail="Wallets with visible overlap across this wallet’s strongest collection signals."
                   />
-                  <label
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 8,
-                      marginBottom: 12,
-                      color: "var(--jpgs-muted)",
-                      fontSize: 12,
-                      cursor: "pointer",
-                      userSelect: "none",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={hideInstitutional}
-                      onChange={(event) => setHideInstitutional(event.target.checked)}
-                      style={{ accentColor: "var(--jpgs-accent)" }}
-                    />
-                    Hide institutional wallets
-                  </label>
-                  {hiddenInstitutionalCollectorCount > 0 && (
-                    <p style={{ ...mutedTextStyle, fontSize: 12, marginBottom: 14 }}>
-                      Hiding {hiddenInstitutionalCollectorCount} likely institutional wallets.
-                    </p>
-                  )}
                   <style>{`
                     .ilj-similar-collector-link { transition: opacity 0.15s; }
                     .ilj-similar-collector-link:hover { opacity: 0.7; }

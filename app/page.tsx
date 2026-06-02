@@ -90,21 +90,6 @@ export default function Home() {
               Compare two wallets
             </Link>
           </div>
-
-          <p style={{ margin: 0 }}>
-            <Link
-              href="/wallet?wallet=vuja-de.eth"
-              style={{
-                fontSize: 13,
-                color: "var(--jpgs-muted)",
-                textDecoration: "underline",
-                textDecorationColor: "rgba(168,164,157,0.3)",
-                textUnderlineOffset: 3,
-              }}
-            >
-              Try Vuja De&apos;s vault
-            </Link>
-          </p>
         </section>
 
         {/* Feature cards */}
