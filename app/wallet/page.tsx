@@ -1,6 +1,10 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
+import {
+  SharedCollectionsStrip,
+  type SharedCollectionCardItem,
+} from "@/components/collectors/SharedCollectionsStrip";
 import { WalletSearchInput, walletSuggestionValue, type WalletSuggestion } from "@/components/WalletSearchInput";
 
 type TopCollection = {
@@ -131,6 +135,8 @@ const SHOW_TOP_ARTISTS = false;
 const SIMILAR_COLLECTOR_COLLECTION_LIMIT = 22;
 const SIMILAR_COLLECTOR_DISPLAY_LIMIT = 5;
 const MIN_SIMILAR_COLLECTOR_SHARED_COLLECTIONS = 2;
+const WALLET_SIGNAL_BAR_SCALE_MAX = 30;
+const NUMBER_FORMATTER = new Intl.NumberFormat("en-US");
 const SUPPORTED_CHAIN_COPY = "Visible across supported chains: ethereum, base, polygon, arbitrum, optimism, zora.";
 
 type WalletReadCopy = {
@@ -163,6 +169,25 @@ function collectionProofLabel(collection: Pick<CollectorProofCollection, "name" 
   if (name && !isRawContractIdentifier(name)) return name;
   if (slug && !isRawContractIdentifier(slug)) return slug.replace(/[-_]+/g, " ");
   return name || slug || "Unknown collection";
+}
+
+function safeCollectionHref(slug?: string | null): string | null {
+  const trimmed = slug?.trim();
+  if (!trimmed || isRawContractIdentifier(trimmed)) return null;
+  return `https://opensea.io/collection/${encodeURIComponent(trimmed)}`;
+}
+
+function sharedCollectorCollectionItems(collections: CollectorProofCollection[]): SharedCollectionCardItem[] {
+  return collections.map((collection) => {
+    const name = collectionProofLabel(collection);
+    return {
+      key: collection.slug || collection.name || name,
+      name,
+      imageUrl: collection.image_url,
+      heldCount: collection.heldCount,
+      href: safeCollectionHref(collection.slug),
+    };
+  });
 }
 
 export default function WalletReadPage() {
@@ -659,26 +684,12 @@ export default function WalletReadPage() {
                   <SectionHeading title="Taste signals" detail="Grouped from visible metadata" />
                   <div style={tasteSignalGridStyle}>
                     {profile.tasteSignals.slice(0, 6).map((signal) => (
-                      <div
+                      <WalletTasteSignalCard
                         key={signal.category}
-                        style={{
-                          border: "1px solid var(--jpgs-border)",
-                          borderRadius: 8,
-                          padding: "14px 16px",
-                          background: "rgba(255,255,255,0.018)",
-                        }}
-                      >
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 8, flexWrap: "wrap" }}>
-                          <h3 style={{ fontSize: 15, fontWeight: 500 }}>{displayTasteSignalLabel(signal.label)}</h3>
-                          <span style={{ color: "var(--jpgs-muted)", fontSize: 12 }}>
-                            {signal.nftCount} JPGs
-                          </span>
-                        </div>
-                        <p style={{ color: "var(--jpgs-muted)", fontSize: 13, lineHeight: 1.6 }}>
-                          Seen across{" "}
-                          {signal.collections.map((collection) => collection.name).join(", ")}
-                        </p>
-                      </div>
+                        signal={signal}
+                        totalVisibleJpgs={profile.nftCount}
+                        walletLabel={tasteSignalWalletLabel(profile, includedSources, walletSet, activeView)}
+                      />
                     ))}
                   </div>
                 </Panel>
@@ -693,6 +704,80 @@ export default function WalletReadPage() {
                   <style>{`
                     .ilj-similar-collector-link { transition: opacity 0.15s; }
                     .ilj-similar-collector-link:hover { opacity: 0.7; }
+                    .ilj-wallet-profile-action {
+                      justify-self: start;
+                      color: rgb(149, 117, 255);
+                      font-size: 11px;
+                      line-height: 1.2;
+                      text-decoration: none;
+                      opacity: 0.9;
+                      transition: opacity 0.15s ease, color 0.15s ease;
+                    }
+                    .ilj-wallet-profile-action:hover {
+                      opacity: 0.72;
+                    }
+                    .ilj-wallet-similar-card {
+                      display: grid;
+                      grid-template-columns: 210px minmax(0, 1fr);
+                      gap: 16px;
+                      align-items: stretch;
+                      min-width: 0;
+                      border: 1px solid rgba(255,255,255,0.07);
+                      border-radius: 14px;
+                      padding: 16px;
+                      background: #161616;
+                      color: var(--jpgs-text);
+                    }
+                    .ilj-wallet-similar-identity {
+                      display: grid;
+                      grid-template-columns: 56px minmax(0, 1fr);
+                      gap: 12px;
+                      align-content: start;
+                      min-width: 0;
+                      padding-right: 16px;
+                      border-right: 1px solid rgba(255,255,255,0.07);
+                    }
+                    .ilj-wallet-similar-copy {
+                      min-width: 0;
+                      display: grid;
+                      gap: 5px;
+                      align-content: start;
+                    }
+                    .ilj-wallet-similar-name-row {
+                      display: flex;
+                      align-items: center;
+                      justify-content: space-between;
+                      gap: 8px;
+                      min-width: 0;
+                    }
+                    .ilj-wallet-similar-rank {
+                      flex: 0 0 auto;
+                      border: 1px solid rgba(149,117,255,0.22);
+                      border-radius: 999px;
+                      padding: 2px 6px;
+                      background: rgba(149,117,255,0.10);
+                      color: rgba(214,204,255,0.82);
+                      font-size: 10px;
+                      line-height: 1;
+                      font-family: var(--font-geist-mono), monospace;
+                    }
+                    .ilj-wallet-similar-proof {
+                      min-width: 0;
+                      align-self: center;
+                    }
+                    @media (max-width: 760px) {
+                      .ilj-wallet-similar-card {
+                        grid-template-columns: minmax(0, 1fr);
+                        gap: 14px;
+                        padding: 15px;
+                      }
+                      .ilj-wallet-similar-identity {
+                        border-right: 0;
+                        border-bottom: 1px solid rgba(255,255,255,0.07);
+                        padding-right: 0;
+                        padding-bottom: 14px;
+                      }
+                    }
                   `}</style>
                   <div style={similarCollectorGridStyle}>
                     {visibleCollectors.map((collector, index) => (
@@ -852,6 +937,61 @@ function sourceLabel(source: SourceWalletMetadata): string {
 
 function displayTasteSignalLabel(label: string): string {
   return label === "Unsorted Signals" ? "Unsorted JPGs" : label;
+}
+
+function formatCount(count: number): string {
+  return NUMBER_FORMATTER.format(count);
+}
+
+function tasteSignalWalletLabel(
+  profile: WalletReadResponse,
+  sourceWallets: SourceWalletMetadata[],
+  walletSet: string[],
+  activeView: ActiveWalletView,
+): string {
+  if (walletSet.length > 1 && activeView === "combined") return "Combined wallets";
+
+  const identityProfile = sourceWallets.length > 0 ? { ...profile, sourceWallets } : profile;
+  const activeSource = activeSourceForView(identityProfile, walletSet, activeView);
+  return sourceIdentityLabel(activeSource, profile.shortWallet || profile.wallet) || "This wallet";
+}
+
+function WalletTasteSignalCard({
+  signal,
+  totalVisibleJpgs,
+  walletLabel,
+}: {
+  signal: TasteSignal;
+  totalVisibleJpgs: number;
+  walletLabel: string;
+}) {
+  const rawPct = totalVisibleJpgs > 0 ? (signal.nftCount / totalVisibleJpgs) * 100 : 0;
+  const displayPct = Math.round(rawPct);
+  const barWidth = Math.min((rawPct / WALLET_SIGNAL_BAR_SCALE_MAX) * 100, 100);
+  const collectionNames = signal.collections.map((collection) => collection.name).join(", ");
+
+  return (
+    <article style={walletSignalCardStyle}>
+      <div style={walletSignalHeaderStyle}>
+        <h3 style={walletSignalTitleStyle}>{displayTasteSignalLabel(signal.label)}</h3>
+        <span style={walletSignalCountPillStyle}>{formatCount(signal.nftCount)} JPGs</span>
+      </div>
+      {collectionNames && (
+        <p style={walletSignalExampleLineStyle}>Seen around {collectionNames}</p>
+      )}
+      <div style={walletSignalBarRowStyle}>
+        <div style={walletSignalBarHeaderStyle}>
+          <span style={walletSignalNameStyle}>{walletLabel}</span>
+          <span style={walletSignalStatStyle}>
+            {displayPct}% of visible JPGs · {formatCount(signal.nftCount)} / {formatCount(totalVisibleJpgs)} JPGs
+          </span>
+        </div>
+        <div style={walletSignalBarTrackStyle}>
+          <div style={{ ...walletSignalBarFillStyle, width: `${barWidth}%` }} />
+        </div>
+      </div>
+    </article>
+  );
 }
 
 function includedSourceWallets(profile: WalletReadResponse): SourceWalletMetadata[] {
@@ -1139,15 +1279,6 @@ function formatListWithFinalItem(items: string[], finalItem: string): string {
   return `${items.join(", ")}, and ${finalItem}`;
 }
 
-function buildOverlapLine(collections: CollectorProofCollection[]): string {
-  if (collections.length === 0) return "";
-  const sorted = collections.slice().sort((a, b) => b.heldCount - a.heldCount);
-  const names = sorted.map((c) => collectionProofLabel(c));
-  if (names.length === 1) return `Overlaps on ${names[0]}`;
-  if (names.length === 2) return `Overlaps on ${names[0]} and ${names[1]}`;
-  return `Overlaps on ${names.join(", ")}`;
-}
-
 function WalletReadSummary({ profile }: { profile: WalletReadResponse }) {
   const read = buildWalletRead(profile);
 
@@ -1352,165 +1483,62 @@ function SimilarCollectorCard({ collector, rank }: { collector: SimilarCollector
     collector.openseaProfileUrl ||
     `https://opensea.io/${profileIdentifier}`;
   const initials = label.replace(/^0x/i, "").slice(0, 2).toUpperCase();
-  const proofLine = `Holds ${collector.sharedCollectionCount} of this wallet’s collection signals.`;
-  const overlapLine = buildOverlapLine(collector.matchedCollections);
+  const signalWord = collector.sharedCollectionCount === 1 ? "signal" : "signals";
+  const proofLine = `${collector.sharedCollectionCount} shared ${signalWord} · ${formatCount(collector.totalHeldFromSelected)} held`;
+  const sharedCollections = sharedCollectorCollectionItems(collector.matchedCollections);
 
   return (
-    <article style={similarCollectorCardStyle}>
-      <a
-        href={openSeaUrl}
-        target="_blank"
-        rel="noreferrer"
-        className="ilj-similar-collector-link"
-        style={similarCollectorAvatarLinkStyle}
-        aria-label={`View ${label} on OpenSea`}
-      >
-        {avatarSrc ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={avatarSrc}
-            alt=""
-            loading="lazy"
-            onError={() => setAvatarFailed(true)}
-            style={similarCollectorAvatarStyle}
-          />
-        ) : (
-          <span style={similarCollectorAvatarFallbackStyle} aria-hidden="true">
-            {initials}
-          </span>
-        )}
-      </a>
+    <article className="ilj-wallet-similar-card">
+      <div className="ilj-wallet-similar-identity">
+        <div style={similarCollectorAvatarLinkStyle} aria-hidden="true">
+          {avatarSrc ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={avatarSrc}
+              alt=""
+              loading="lazy"
+              onError={() => setAvatarFailed(true)}
+              style={similarCollectorAvatarStyle}
+            />
+          ) : (
+            <span style={similarCollectorAvatarFallbackStyle} aria-hidden="true">
+              {initials}
+            </span>
+          )}
+        </div>
 
-      <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 3 }}>
+        <div className="ilj-wallet-similar-copy">
+          <div className="ilj-wallet-similar-name-row">
+            <span style={similarCollectorNameStyle}>
+              {label}
+            </span>
+            <span className="ilj-wallet-similar-rank">#{rank}</span>
+          </div>
+
+          {secondaryIdentity && (
+            <p style={similarCollectorIdentityStyle}>{secondaryIdentity}</p>
+          )}
+
+          <p style={similarCollectorReasonStyle}>{proofLine}</p>
           <a
             href={openSeaUrl}
             target="_blank"
             rel="noreferrer"
-            className="ilj-similar-collector-link"
-            style={similarCollectorNameStyle}
+            className="ilj-wallet-profile-action"
+            aria-label={`View ${label} on OpenSea`}
           >
-            {label}
+            View profile -&gt;
           </a>
-          <span style={{ fontSize: 10, color: "rgba(168,164,157,0.4)", fontFamily: "monospace", flexShrink: 0 }}>
-            #{rank}
-          </span>
         </div>
+      </div>
 
-        {secondaryIdentity && (
-          <p style={similarCollectorIdentityStyle}>{secondaryIdentity}</p>
-        )}
-
-        <SimilarCollectorCollectionStack collections={collector.matchedCollections} />
-
-        <p style={similarCollectorReasonStyle}>{proofLine}</p>
-        {overlapLine && <p style={similarCollectorOverlapStyle}>{overlapLine}</p>}
+      <div className="ilj-wallet-similar-proof">
+        <SharedCollectionsStrip
+          label="SHARED COLLECTIONS"
+          collections={sharedCollections}
+        />
       </div>
     </article>
-  );
-}
-
-function SimilarCollectorCollectionDot({
-  collection,
-  index,
-  visibleCount,
-}: {
-  collection: CollectorProofCollection;
-  index: number;
-  visibleCount: number;
-}) {
-  const [failed, setFailed] = useState(false);
-  const src = failed ? null : collection.image_url ?? null;
-  const showBadge = Number.isFinite(collection.heldCount);
-  const badgeText =
-    collection.heldCount >= 1000
-      ? `${Math.floor(collection.heldCount / 1000)}k`
-      : String(collection.heldCount);
-
-  return (
-    <div
-      title={
-        showBadge
-          ? `${collectionProofLabel(collection)} · ${collection.heldCount} held`
-          : collectionProofLabel(collection)
-      }
-      style={{
-        position: "relative",
-        width: 44,
-        height: 44,
-        flexShrink: 0,
-        zIndex: visibleCount - index,
-      }}
-    >
-      <div
-        style={{
-          width: "100%",
-          height: "100%",
-          borderRadius: "50%",
-          overflow: "hidden",
-          border: "2px solid #161616",
-          background: "rgba(149,117,255,0.15)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        {src && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={src}
-            alt=""
-            loading="lazy"
-            onError={() => setFailed(true)}
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-          />
-        )}
-      </div>
-      {showBadge && (
-        <span
-          aria-hidden="true"
-          style={{
-            position: "absolute",
-            bottom: -5,
-            right: -5,
-            minWidth: 17,
-            height: 17,
-            borderRadius: 9,
-            background: "rgba(14,14,14,0.9)",
-            border: "1px solid rgba(255,255,255,0.10)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "0 3px",
-            fontSize: 9,
-            fontFamily: "monospace",
-            color: "rgba(168,164,157,0.75)",
-            lineHeight: 1,
-          }}
-        >
-          {badgeText}
-        </span>
-      )}
-    </div>
-  );
-}
-
-function SimilarCollectorCollectionStack({ collections }: { collections: CollectorProofCollection[] }) {
-  const sorted = collections.slice().sort((a, b) => b.heldCount - a.heldCount);
-
-  if (sorted.length === 0) return null;
-
-  return (
-    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginBottom: 8 }}>
-      {sorted.map((col, i) => (
-        <SimilarCollectorCollectionDot
-          key={col.slug || col.name}
-          collection={col}
-          index={i}
-          visibleCount={sorted.length}
-        />
-      ))}
-    </div>
   );
 }
 
@@ -1697,20 +1725,97 @@ const tasteSignalGridStyle: React.CSSProperties = {
   gap: "clamp(10px, 1.8vw, 12px)",
 };
 
+const walletSignalCardStyle: React.CSSProperties = {
+  display: "grid",
+  gap: 12,
+  border: "1px solid var(--jpgs-border)",
+  borderRadius: 8,
+  padding: "16px 18px",
+  background: "rgba(255,255,255,0.018)",
+};
+
+const walletSignalHeaderStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 12,
+  flexWrap: "wrap",
+};
+
+const walletSignalTitleStyle: React.CSSProperties = {
+  color: "var(--jpgs-text)",
+  fontSize: 15,
+  fontWeight: 500,
+  lineHeight: 1.35,
+  overflowWrap: "anywhere",
+};
+
+const walletSignalCountPillStyle: React.CSSProperties = {
+  flex: "0 0 auto",
+  border: "1px solid rgba(255,255,255,0.09)",
+  borderRadius: 999,
+  padding: "4px 10px",
+  background: "rgba(255,255,255,0.05)",
+  color: "rgba(238,235,229,0.72)",
+  fontSize: 11,
+  whiteSpace: "nowrap",
+};
+
+const walletSignalExampleLineStyle: React.CSSProperties = {
+  color: "var(--jpgs-muted)",
+  fontSize: 13,
+  lineHeight: 1.55,
+  marginTop: 1,
+  overflowWrap: "anywhere",
+};
+
+const walletSignalBarRowStyle: React.CSSProperties = {
+  display: "grid",
+  gap: 5,
+  marginTop: 4,
+};
+
+const walletSignalBarHeaderStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "baseline",
+  gap: 8,
+  flexWrap: "wrap",
+};
+
+const walletSignalNameStyle: React.CSSProperties = {
+  minWidth: 0,
+  color: "var(--jpgs-muted)",
+  fontSize: 12,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+const walletSignalStatStyle: React.CSSProperties = {
+  color: "var(--jpgs-muted)",
+  fontSize: 11,
+  fontFamily: "var(--font-geist-mono)",
+  textAlign: "right",
+};
+
+const walletSignalBarTrackStyle: React.CSSProperties = {
+  height: 4,
+  borderRadius: 99,
+  background: "rgba(255,255,255,0.07)",
+  overflow: "hidden",
+};
+
+const walletSignalBarFillStyle: React.CSSProperties = {
+  height: "100%",
+  borderRadius: 99,
+  background: "rgba(126,148,234,0.82)",
+  transition: "width 0.3s ease",
+};
+
 const similarCollectorGridStyle: React.CSSProperties = {
   display: "grid",
   gap: "clamp(10px, 1.8vw, 12px)",
-};
-
-const similarCollectorCardStyle: React.CSSProperties = {
-  display: "flex",
-  gap: 16,
-  alignItems: "flex-start",
-  border: "1px solid rgba(255,255,255,0.07)",
-  borderRadius: 14,
-  padding: "18px 20px",
-  background: "#161616",
-  color: "var(--jpgs-text)",
 };
 
 const similarCollectorAvatarLinkStyle: React.CSSProperties = {
@@ -1771,18 +1876,8 @@ const similarCollectorReasonStyle: React.CSSProperties = {
   color: "var(--jpgs-muted)",
   fontSize: 12,
   lineHeight: 1.45,
-  marginTop: 8,
-  marginBottom: 4,
+  marginTop: 4,
 };
-
-const similarCollectorOverlapStyle: React.CSSProperties = {
-  color: "rgba(168,164,157,0.7)",
-  fontSize: 12,
-  lineHeight: 1.45,
-  marginBottom: 10,
-};
-
-
 
 const sectionHeadingStyle: React.CSSProperties = {
   display: "flex",

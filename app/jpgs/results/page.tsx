@@ -2,6 +2,10 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import {
+  SharedCollectionsStrip,
+  type SharedCollectionCardItem,
+} from "@/components/collectors/SharedCollectionsStrip";
 import { SelectedCollectionEditor } from "@/components/jpgs/SelectedCollectionEditor";
 import type { OsCollection } from "@/components/jpgs/CollectionSearchInput";
 
@@ -72,13 +76,32 @@ function collectionProofLabel(collection: Pick<MatchedCollection, "name" | "slug
   return name || slug || "Unknown collection";
 }
 
-function whyLine(collections: MatchedCollection[]): string {
-  if (collections.length === 0) return "";
-  const sorted = collections.slice().sort((a, b) => b.heldCount - a.heldCount);
-  const names = sorted.map((c) => collectionProofLabel(c));
-  if (names.length === 1) return `Overlaps on ${names[0]}`;
-  if (names.length === 2) return `Overlaps on ${names[0]} and ${names[1]}`;
-  return `Overlaps on ${names.join(", ")}`;
+function safeCollectionHref(slug?: string | null): string | null {
+  const trimmed = slug?.trim();
+  if (!trimmed || isRawContractIdentifier(trimmed)) return null;
+  return `https://opensea.io/collection/${encodeURIComponent(trimmed)}`;
+}
+
+function sharedCollectionItems(collections: MatchedCollection[]): SharedCollectionCardItem[] {
+  return collections.map((collection) => {
+    const name = collectionProofLabel(collection);
+    return {
+      key: collection.slug || collection.name || name,
+      name,
+      imageUrl: collection.image_url,
+      heldCount: collection.heldCount,
+      href: safeCollectionHref(collection.slug),
+    };
+  });
+}
+
+function jpgsCollectorSummary(wallet: CollectorWallet): string {
+  const collectionCount = wallet.matchedCollectionCount;
+  const heldCount = wallet.totalHeldFromSelected;
+  const collectionWord = collectionCount === 1 ? "collection" : "collections";
+
+  if (heldCount > 0) return `${collectionCount} ${collectionWord} · ${heldCount} held`;
+  return `Matches ${collectionCount} selected ${collectionWord}`;
 }
 
 function ResultsInner() {
@@ -214,7 +237,7 @@ function ResultsInner() {
 
   return (
     <>
-      <section style={{ maxWidth: 640, margin: "0 auto", padding: "72px 24px 40px" }}>
+      <section style={{ maxWidth: 760, margin: "0 auto", padding: "72px 24px 40px" }}>
         <h1 style={{ fontSize: 28, fontWeight: 300, letterSpacing: "-0.02em", marginBottom: 10 }}>
           Collectors near this taste
         </h1>
@@ -231,7 +254,7 @@ function ResultsInner() {
         )}
       </section>
 
-      <section style={{ maxWidth: 640, margin: "0 auto", padding: "0 24px 80px" }}>
+      <section style={{ maxWidth: 980, margin: "0 auto", padding: "0 24px 80px", overflowX: "clip" }}>
         {loading && (
           <div style={{
             background: "#161616",
@@ -315,6 +338,114 @@ function ResultsInner() {
         @keyframes spin { to { transform: rotate(360deg); } }
         .ilj-collector-link { transition: opacity 0.15s; }
         .ilj-collector-link:hover { opacity: 0.7; }
+        .ilj-jpgs-profile-action {
+          justify-self: start;
+          color: rgb(149, 117, 255);
+          font-size: 11px;
+          line-height: 1.2;
+          text-decoration: none;
+          opacity: 0.9;
+          transition: opacity 0.15s ease, color 0.15s ease;
+        }
+        .ilj-jpgs-profile-action:hover {
+          opacity: 0.72;
+        }
+        .ilj-jpgs-collector-card {
+          background: #161616;
+          border: 1px solid rgba(255,255,255,0.07);
+          border-radius: 14px;
+          padding: 16px;
+          display: grid;
+          grid-template-columns: 210px minmax(0, 1fr);
+          gap: 16px;
+          align-items: stretch;
+          min-width: 0;
+        }
+        .ilj-jpgs-collector-identity {
+          display: grid;
+          grid-template-columns: 56px minmax(0, 1fr);
+          gap: 12px;
+          align-content: start;
+          padding-right: 16px;
+          border-right: 1px solid rgba(255,255,255,0.07);
+          min-width: 0;
+        }
+        .ilj-jpgs-collector-avatar {
+          flex-shrink: 0;
+          width: 56px;
+          height: 56px;
+          border-radius: 50%;
+          overflow: hidden;
+          background: rgba(149,117,255,0.15);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          text-decoration: none;
+        }
+        .ilj-jpgs-collector-copy {
+          min-width: 0;
+          display: grid;
+          gap: 5px;
+          align-content: start;
+        }
+        .ilj-jpgs-collector-title-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          min-width: 0;
+        }
+        .ilj-jpgs-collector-name {
+          font-size: 14px;
+          font-weight: 500;
+          color: rgb(240,237,230);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          text-decoration: none;
+          min-width: 0;
+        }
+        .ilj-jpgs-collector-rank {
+          flex: 0 0 auto;
+          border: 1px solid rgba(149,117,255,0.22);
+          border-radius: 999px;
+          padding: 2px 6px;
+          background: rgba(149,117,255,0.10);
+          color: rgba(214,204,255,0.82);
+          font-size: 10px;
+          line-height: 1;
+          font-family: var(--font-geist-mono), monospace;
+        }
+        .ilj-jpgs-collector-secondary {
+          color: rgba(168,164,157,0.62);
+          font-size: 11px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .ilj-jpgs-collector-summary {
+          color: rgba(168,164,157,0.74);
+          font-size: 12px;
+          line-height: 1.45;
+          margin-top: 4px;
+        }
+        .ilj-jpgs-collector-proof {
+          min-width: 0;
+          align-self: center;
+        }
+        @media (max-width: 760px) {
+          .ilj-jpgs-collector-card {
+            grid-template-columns: minmax(0, 1fr);
+            gap: 14px;
+            padding: 15px;
+          }
+          .ilj-jpgs-collector-identity {
+            border-right: 0;
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+            padding-right: 0;
+            padding-bottom: 14px;
+          }
+        }
       `}</style>
     </>
   );
@@ -335,173 +466,58 @@ function CollectorCard({ wallet, rank }: { wallet: CollectorWallet; rank: number
     wallet.openseaProfileUrl ||
     `https://opensea.io/${profileIdentifier}`;
   const initials = label.replace(/^0x/i, "").slice(0, 2).toUpperCase();
-  const why = whyLine(wallet.matchedCollections);
+  const summary = jpgsCollectorSummary(wallet);
+  const sharedCollections = sharedCollectionItems(wallet.matchedCollections);
 
   return (
-    <div style={{
-      background: "#161616",
-      border: "1px solid rgba(255,255,255,0.07)",
-      borderRadius: 14,
-      padding: "18px 20px",
-      display: "flex",
-      gap: 16,
-      alignItems: "flex-start",
-    }}>
-      <a
-        href={openSeaUrl}
-        target="_blank"
-        rel="noreferrer"
-        className="ilj-collector-link"
-        style={{
-          flexShrink: 0,
-          width: 56,
-          height: 56,
-          borderRadius: "50%",
-          overflow: "hidden",
-          background: "rgba(149,117,255,0.15)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          textDecoration: "none",
-        }}
-      >
-        {avatarSrc ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={avatarSrc}
-            alt=""
-            onError={() => setAvatarFailed(true)}
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-          />
-        ) : (
-          <span style={{ fontSize: 14, color: "rgb(149,117,255)", fontWeight: 500 }}>{initials}</span>
-        )}
-      </a>
+    <article className="ilj-jpgs-collector-card">
+      <div className="ilj-jpgs-collector-identity">
+        <div className="ilj-jpgs-collector-avatar" aria-hidden="true">
+          {avatarSrc ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={avatarSrc}
+              alt=""
+              onError={() => setAvatarFailed(true)}
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
+          ) : (
+            <span style={{ fontSize: 14, color: "rgb(149,117,255)", fontWeight: 500 }}>{initials}</span>
+          )}
+        </div>
 
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 3 }}>
+        <div className="ilj-jpgs-collector-copy">
+          <div className="ilj-jpgs-collector-title-row">
+            <span className="ilj-jpgs-collector-name">
+              {label}
+            </span>
+            <span className="ilj-jpgs-collector-rank">#{rank}</span>
+          </div>
+
+          {secondaryIdentity && (
+            <p className="ilj-jpgs-collector-secondary">{secondaryIdentity}</p>
+          )}
+
+          <p className="ilj-jpgs-collector-summary">{summary}</p>
           <a
             href={openSeaUrl}
             target="_blank"
             rel="noreferrer"
-            className="ilj-collector-link"
-            style={{
-              fontSize: 14,
-              fontWeight: 500,
-              color: "rgb(240,237,230)",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              textDecoration: "none",
-              minWidth: 0,
-            }}
+            className="ilj-jpgs-profile-action"
+            aria-label={`View ${label} on OpenSea`}
           >
-            {label}
+            View profile -&gt;
           </a>
-          <span style={{ fontSize: 10, color: "rgba(168,164,157,0.4)", fontFamily: "monospace", flexShrink: 0 }}>
-            #{rank}
-          </span>
         </div>
-
-        {secondaryIdentity && (
-          <p style={{ fontSize: 11, color: "rgba(168,164,157,0.62)", marginBottom: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {secondaryIdentity}
-          </p>
-        )}
-
-        <CollectionImageStrip collections={wallet.matchedCollections} />
-
-        {why && (
-          <p style={{ fontSize: 12, color: "rgba(168,164,157,0.7)", marginBottom: 10 }}>
-            {why}
-          </p>
-        )}
-
       </div>
-    </div>
-  );
-}
 
-function CollectionImageDot({ collection, index, visibleCount }: { collection: MatchedCollection; index: number; visibleCount: number }) {
-  const [failed, setFailed] = useState(false);
-  const src = failed ? null : collection.image_url ?? null;
-  const showBadge = collection.heldCount > 1;
-
-  return (
-    <div
-      title={showBadge ? `${collection.name} · ${collection.heldCount} held` : collection.name}
-      style={{
-        position: "relative",
-        width: 44,
-        height: 44,
-        flexShrink: 0,
-        zIndex: visibleCount - index,
-      }}
-    >
-      <div
-        style={{
-          width: "100%",
-          height: "100%",
-          borderRadius: "50%",
-          overflow: "hidden",
-          border: "2px solid #161616",
-          background: "rgba(149,117,255,0.15)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        {src && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={src}
-            alt=""
-            loading="lazy"
-            onError={() => setFailed(true)}
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-          />
-        )}
+      <div className="ilj-jpgs-collector-proof">
+        <SharedCollectionsStrip
+          label="COLLECTION OVERLAP"
+          collections={sharedCollections}
+        />
       </div>
-      {showBadge && (
-        <span
-          aria-hidden="true"
-          style={{
-            position: "absolute",
-            bottom: -5,
-            right: -5,
-            minWidth: 17,
-            height: 17,
-            borderRadius: 9,
-            background: "rgba(14,14,14,0.9)",
-            border: "1px solid rgba(255,255,255,0.10)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "0 3px",
-            fontSize: 9,
-            fontFamily: "monospace",
-            color: "rgba(168,164,157,0.75)",
-            lineHeight: 1,
-          }}
-        >
-          {collection.heldCount}
-        </span>
-      )}
-    </div>
-  );
-}
-
-function CollectionImageStrip({ collections }: { collections: MatchedCollection[] }) {
-  const sorted = collections.slice().sort((a, b) => b.heldCount - a.heldCount);
-
-  if (sorted.length === 0) return null;
-
-  return (
-    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginBottom: 8 }}>
-      {sorted.map((col, i) => (
-        <CollectionImageDot key={col.slug || col.name} collection={col} index={i} visibleCount={sorted.length} />
-      ))}
-    </div>
+    </article>
   );
 }
 
