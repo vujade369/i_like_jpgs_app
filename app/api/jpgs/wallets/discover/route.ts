@@ -10,6 +10,8 @@ import {
   getInstitutionalWalletReason,
 } from "@/lib/jpgs/institutionalWallets";
 
+export const maxDuration = 300;
+
 const DISCOVER_COLLECTOR_RESULT_LIMIT = 20;
 
 type DiscoverBody = { collections: CollectionRef[] };

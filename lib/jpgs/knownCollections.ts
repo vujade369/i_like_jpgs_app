@@ -25,6 +25,12 @@ export const KNOWN_COLLECTIONS: KnownCollection[] = [
     contract: "0x5f7162ce5b6a7747a0152a820254b8726e63b95f",
     openseaUrl: "https://opensea.io/collection/no-bad-trippers",
   },
+  {
+    slug: "thekamagang",
+    name: "Kamagang",
+    contract: "0xd049ab4988962c8d3f25908e25baf7dd868a01c3",
+    openseaUrl: "https://opensea.io/collection/thekamagang",
+  },
 ];
 
 export const KNOWN_BY_CONTRACT = new Map(

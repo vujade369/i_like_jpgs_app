@@ -12,7 +12,11 @@ const OPENSEA_BASE = "https://api.opensea.io/api/v2";
 const HOLDER_PAGE_SIZE = 100;
 const MAX_HOLDERS_PER_COLLECTION = 10_000;
 const MAX_COLLECTIONS_PER_DISCOVERY = 5;
-const HOLDER_FETCH_TIMEOUT_MS = 25_000;
+const HOLDER_FETCH_TIMEOUT_MS = 200_000;
+const HOLDER_PAGE_DELAY_MS = 750;
+const COLLECTION_FETCH_CONCURRENCY = 1;
+const MAX_RETRY_ATTEMPTS = 8;
+const RETRY_BASE_DELAY_MS = 1_000;
 const CACHE_TTL_MS = 20 * 60 * 1000;
 const ACCOUNT_PROFILE_CACHE_TTL_MS = 15 * 60 * 1000;
 // Shorter TTL for addresses where OpenSea returned a definitive 404 (no account exists).
@@ -53,6 +57,15 @@ type HolderCacheEntry = {
   lastPageFirstHolder: string | undefined;
   cursorChanged: boolean;
   requestUrls: string[];
+  rateLimitRetryAttempts: number;
+  rateLimitedPageCount: number;
+  retryExhaustedPageCount: number;
+  lastRetryDelayMs: number;
+  totalRetryDelayMs: number;
+  retryDelayMsSamples: number[];
+  lastRetryAfterHeader: string | undefined;
+  lastRetryAfterMs: number | undefined;
+  pageDelayMs: number;
 };
 
 type AccountIdentityCacheEntry = {
@@ -90,6 +103,15 @@ export type CollectionFetchDebug = {
   cursorChanged: boolean;
   cached: boolean;
   requestUrls: string[];
+  rateLimitRetryAttempts: number;
+  rateLimitedPageCount: number;
+  retryExhaustedPageCount: number;
+  lastRetryDelayMs: number;
+  totalRetryDelayMs: number;
+  retryDelayMsSamples: number[];
+  lastRetryAfterHeader: string | undefined;
+  lastRetryAfterMs: number | undefined;
+  pageDelayMs: number;
   error?: string;
 };
 
@@ -101,6 +123,7 @@ export type DiscoveryResult = {
     collectionsFetched: CollectionFetchDebug[];
     partial: boolean;
     errors: string[];
+    collectionFetchConcurrency: number;
   };
 };
 
@@ -212,6 +235,10 @@ async function runConcurrently<T>(
 
   await Promise.all(Array.from({ length: Math.min(concurrency, tasks.length) }, worker));
   return results;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function firstText(...values: Array<string | null | undefined>): string | undefined {
@@ -596,11 +623,17 @@ async function fetchFromApi(slug: string): Promise<HolderCacheEntry> {
   const seenCursors = new Set<string>();
   const seenPageSigs = new Set<string>();
   const requestUrls: string[] = [];
-
-  const endpointPath = `/api/v2/collections/${slug}/holders`;
+  let rateLimitRetryAttempts = 0;
+  let rateLimitedPageCount = 0;
+  let retryExhaustedPageCount = 0;
+  let lastRetryDelayMs = 0;
+  let totalRetryDelayMs = 0;
+  const retryDelayMsSamples: number[] = [];
+  let lastRetryAfterHeader: string | undefined;
+  let lastRetryAfterMs: number | undefined;
 
   try {
-    while (holderMap.size < MAX_HOLDERS_PER_COLLECTION) {
+    outer: while (holderMap.size < MAX_HOLDERS_PER_COLLECTION) {
       // URLSearchParams encodes special characters (=, +, etc.) correctly.
       // OpenSea /collections/{slug}/holders uses "cursor" (not "next") as the
       // pagination query parameter, even though the response field is called "next".
@@ -610,16 +643,49 @@ async function fetchFromApi(slug: string): Promise<HolderCacheEntry> {
       const requestUrl = `${OPENSEA_BASE}/collections/${encodeURIComponent(slug)}/holders?${params.toString()}`;
       if (requestUrls.length < 2) requestUrls.push(requestUrl);
 
-      const res = await fetch(
-        requestUrl,
-        {
+      // Retry loop for 429 responses on this page.
+      let res!: Response;
+      let pageHit429 = false;
+
+      for (let attempt = 0; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
+        if (attempt > 0) {
+          const retryAfterHeader = res.headers.get("Retry-After");
+          lastRetryAfterHeader = retryAfterHeader ?? undefined;
+          const retryAfterSec = retryAfterHeader
+            ? Math.max(parseInt(retryAfterHeader, 10), 1)
+            : null;
+          const delay =
+            retryAfterSec != null
+              ? retryAfterSec * 1000
+              : RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1) * (0.75 + Math.random() * 0.5);
+          lastRetryAfterMs = retryAfterSec != null ? delay : undefined;
+          const delayRounded = Math.round(delay);
+          lastRetryDelayMs = delayRounded;
+          totalRetryDelayMs += delayRounded;
+          if (retryDelayMsSamples.length < 5) retryDelayMsSamples.push(delayRounded);
+          rateLimitRetryAttempts++;
+          await sleep(delay);
+        }
+
+        res = await fetch(requestUrl, {
           signal: controller.signal,
           headers: { "X-API-KEY": apiKey(), Accept: "application/json" },
           cache: "no-store",
-        },
-      );
+        });
 
-      if (res.status === 429) { stoppedReason = "rate_limited"; break; }
+        if (res.status !== 429) break;
+
+        pageHit429 = true;
+
+        if (attempt === MAX_RETRY_ATTEMPTS) {
+          retryExhaustedPageCount++;
+          stoppedReason = "rate_limited_exhausted";
+          break outer;
+        }
+      }
+
+      if (pageHit429 && res.status !== 429) rateLimitedPageCount++;
+
       if (!res.ok) { stoppedReason = `http_${res.status}`; break; }
 
       const data = await res.json() as {
@@ -668,6 +734,8 @@ async function fetchFromApi(slug: string): Promise<HolderCacheEntry> {
         stoppedReason = "max_reached";
         break;
       }
+
+      await sleep(HOLDER_PAGE_DELAY_MS);
     }
   } catch (err: unknown) {
     stoppedReason =
@@ -698,6 +766,15 @@ async function fetchFromApi(slug: string): Promise<HolderCacheEntry> {
     lastPageFirstHolder,
     cursorChanged,
     requestUrls,
+    rateLimitRetryAttempts,
+    rateLimitedPageCount,
+    retryExhaustedPageCount,
+    lastRetryDelayMs,
+    totalRetryDelayMs,
+    retryDelayMsSamples,
+    lastRetryAfterHeader,
+    lastRetryAfterMs,
+    pageDelayMs: HOLDER_PAGE_DELAY_MS,
   };
 }
 
@@ -707,7 +784,9 @@ export async function fetchCollectionHolders(
   const hit = getCached(slug);
   if (hit) return { entry: hit, cached: true };
   const result = await fetchFromApi(slug);
-  holderCache.set(slug, result);
+  if (result.complete) {
+    holderCache.set(slug, result);
+  }
   return { entry: result, cached: false };
 }
 
@@ -720,8 +799,20 @@ export async function discoverWalletsForCollections(
   const maxCollections = options.maxCollections ?? MAX_COLLECTIONS_PER_DISCOVERY;
   const limited = collections.slice(0, maxCollections);
 
-  const settled = await Promise.allSettled(
-    limited.map((col) => fetchCollectionHolders(col.slug)),
+  type SettledResult =
+    | { status: "fulfilled"; value: { entry: HolderCacheEntry; cached: boolean } }
+    | { status: "rejected"; reason: unknown };
+
+  const settled = await runConcurrently(
+    limited.map((col) => async (): Promise<SettledResult> => {
+      try {
+        const value = await fetchCollectionHolders(col.slug);
+        return { status: "fulfilled", value };
+      } catch (reason) {
+        return { status: "rejected", reason };
+      }
+    }),
+    COLLECTION_FETCH_CONCURRENCY,
   );
 
   const collectionsFetched: CollectionFetchDebug[] = [];
@@ -750,6 +841,15 @@ export async function discoverWalletsForCollections(
         cursorChanged: entry.cursorChanged,
         cached,
         requestUrls: entry.requestUrls,
+        rateLimitRetryAttempts: entry.rateLimitRetryAttempts,
+        rateLimitedPageCount: entry.rateLimitedPageCount,
+        retryExhaustedPageCount: entry.retryExhaustedPageCount,
+        lastRetryDelayMs: entry.lastRetryDelayMs,
+        totalRetryDelayMs: entry.totalRetryDelayMs,
+        retryDelayMsSamples: entry.retryDelayMsSamples,
+        lastRetryAfterHeader: entry.lastRetryAfterHeader,
+        lastRetryAfterMs: entry.lastRetryAfterMs,
+        pageDelayMs: entry.pageDelayMs,
       });
     } else {
       const msg = result.reason instanceof Error ? result.reason.message : String(result.reason);
@@ -769,6 +869,15 @@ export async function discoverWalletsForCollections(
         cursorChanged: false,
         cached: false,
         requestUrls: [],
+        rateLimitRetryAttempts: 0,
+        rateLimitedPageCount: 0,
+        retryExhaustedPageCount: 0,
+        lastRetryDelayMs: 0,
+        totalRetryDelayMs: 0,
+        retryDelayMsSamples: [],
+        lastRetryAfterHeader: undefined,
+        lastRetryAfterMs: undefined,
+        pageDelayMs: HOLDER_PAGE_DELAY_MS,
         error: msg,
       });
     }
@@ -831,6 +940,7 @@ export async function discoverWalletsForCollections(
       collectionsFetched,
       partial: errors.length > 0 || collectionsFetched.some((c) => !c.complete),
       errors,
+      collectionFetchConcurrency: COLLECTION_FETCH_CONCURRENCY,
     },
   };
 }
