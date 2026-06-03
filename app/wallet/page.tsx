@@ -14,6 +14,9 @@ type TopCollection = {
   imageSource: "collection" | "nft" | "none";
   count: number;
   openseaUrl: string;
+  contract?: string;
+  chain?: string;
+  contracts?: Array<{ address: string; chain?: string }>;
 };
 
 type TopArtist = {
@@ -318,6 +321,9 @@ export default function WalletReadPage() {
         slug: collection.slug,
         name: collection.name,
         imageUrl: collection.imageUrl,
+        contract: collection.contract,
+        chain: collection.chain,
+        contracts: collection.contracts,
       }));
 
     setSimilarCollectors([]);

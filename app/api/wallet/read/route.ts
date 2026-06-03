@@ -24,12 +24,18 @@ type TopCollection = {
   imageSource: "collection" | "nft" | "none";
   count: number;
   openseaUrl: string;
+  contract?: string;
+  chain?: string;
+  contracts?: Array<{ address: string; chain?: string }>;
 };
 
 type CollectionRow = {
   slug: string;
   count: number;
   firstNftImage?: string;
+  contract?: string;
+  chain?: string;
+  contracts?: Array<{ address: string; chain?: string }>;
 };
 
 type TasteSignal = {
@@ -110,6 +116,8 @@ function topCollectionFromRow(
 ): TopCollection {
   const meta = enriched.get(row.slug);
   const imageUrl = meta?.image_url || row.firstNftImage;
+  const contracts = meta?.contracts?.length ? meta.contracts : row.contracts;
+  const firstContract = contracts?.[0];
 
   return {
     slug: row.slug,
@@ -118,6 +126,9 @@ function topCollectionFromRow(
     imageSource: meta?.image_url ? "collection" : imageUrl ? "nft" : "none",
     count: row.count,
     openseaUrl: meta?.opensea_url || `https://opensea.io/collection/${row.slug}`,
+    contract: firstContract?.address || row.contract,
+    chain: firstContract?.chain || row.chain,
+    contracts,
   };
 }
 
@@ -401,11 +412,23 @@ export async function GET(req: NextRequest) {
     if (existing) {
       existing.count += count;
       existing.firstNftImage ||= nftImage(nft);
+      if (nft.contract && !existing.contracts?.some((contract) =>
+        contract.address.toLowerCase() === nft.contract?.toLowerCase() &&
+        (contract.chain ?? "").toLowerCase() === (nft.chain ?? "").toLowerCase()
+      )) {
+        existing.contracts = [
+          ...(existing.contracts ?? []),
+          { address: nft.contract, chain: nft.chain },
+        ];
+      }
     } else {
       collections.set(slug, {
         slug,
         count,
         firstNftImage: nftImage(nft),
+        contract: nft.contract,
+        chain: nft.chain,
+        contracts: nft.contract ? [{ address: nft.contract, chain: nft.chain }] : undefined,
       });
     }
   }

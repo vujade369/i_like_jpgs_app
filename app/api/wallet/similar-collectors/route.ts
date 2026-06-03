@@ -24,6 +24,9 @@ type SimilarCollectorsBody = {
     name?: string;
     imageUrl?: string;
     image_url?: string;
+    contract?: string;
+    chain?: string;
+    contracts?: Array<{ address?: string; chain?: string }>;
   }>;
 };
 
@@ -52,6 +55,14 @@ function collectionRefsFromBody(body: SimilarCollectorsBody): CollectionRef[] {
       slug,
       name: collection.name?.trim() || slug.replace(/-/g, " "),
       image_url: collection.image_url || collection.imageUrl,
+      contract: collection.contract?.trim(),
+      chain: collection.chain?.trim(),
+      contracts: collection.contracts
+        ?.map((contract) => ({
+          address: contract.address?.trim() ?? "",
+          chain: contract.chain?.trim(),
+        }))
+        .filter((contract) => contract.address),
     });
 
     if (refs.length >= MAX_COLLECTIONS) break;
