@@ -15,6 +15,7 @@ const MAX_COLLECTIONS = 15;
 const MAX_DISCOVERED_COLLECTORS = 20;
 const MAX_RETURNED_COLLECTORS = 10;
 const MIN_SHARED_COLLECTIONS = 2;
+const SLOW_REQUEST_LOG_THRESHOLD_MS = 5_000;
 const WALLET_RE = /^0x[a-fA-F0-9]{40}$/;
 
 type SimilarCollectorsBody = {
@@ -37,6 +38,10 @@ function shortWallet(address: string): string {
 function normalizeWallet(address: string): string | null {
   const trimmed = address.trim().toLowerCase();
   return WALLET_RE.test(trimmed) ? trimmed : null;
+}
+
+function nowMs(): number {
+  return Date.now();
 }
 
 function collectionRefsFromBody(body: SimilarCollectorsBody): CollectionRef[] {
@@ -72,6 +77,7 @@ function collectionRefsFromBody(body: SimilarCollectorsBody): CollectionRef[] {
 }
 
 export async function POST(req: NextRequest) {
+  const routeStartedAt = nowMs();
   const url = new URL(req.url);
   const debug = url.searchParams.get("debug") === "1";
   let body: SimilarCollectorsBody;
@@ -81,8 +87,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ collectors: [] });
   }
 
+  const prepStartedAt = nowMs();
   const collections = collectionRefsFromBody(body);
   const collectionsReceived = body.collections?.length ?? 0;
+  const collectionPrepMs = nowMs() - prepStartedAt;
 
   if (collections.length < 2) {
     return NextResponse.json({ collectors: [] });
@@ -94,18 +102,22 @@ export async function POST(req: NextRequest) {
       .filter((address): address is string => Boolean(address)),
   );
 
+  const discoveryStartedAt = nowMs();
   const discovery = await discoverWalletsForCollections(collections, {
     maxCollections: MAX_COLLECTIONS,
   }).catch(() => null);
+  const holderDiscoveryMs = nowMs() - discoveryStartedAt;
 
   if (!discovery) {
     return NextResponse.json({ collectors: [] });
   }
 
+  const rankingStartedAt = nowMs();
   const matches = discovery.wallets
     .filter((wallet) => !excludedWallets.has(wallet.address.toLowerCase()))
     .filter((wallet) => wallet.matchedCollectionCount >= MIN_SHARED_COLLECTIONS)
     .slice(0, MAX_DISCOVERED_COLLECTORS);
+  const returnedMatches = matches.slice(0, MAX_RETURNED_COLLECTORS);
   const collectionsWithUsableHolders = discovery.debug.collectionsFetched.filter(
     (collection) => collection.fetchedCount > 0,
   );
@@ -116,13 +128,16 @@ export async function POST(req: NextRequest) {
       ),
     ),
   );
+  const rankingFilteringMs = nowMs() - rankingStartedAt;
 
+  const hydrationStartedAt = nowMs();
   const hydration = await hydrateAccountIdentities(
-    matches.map((wallet) => wallet.address),
-    { limit: MAX_DISCOVERED_COLLECTORS },
+    returnedMatches.map((wallet) => wallet.address),
+    { limit: MAX_RETURNED_COLLECTORS },
   );
+  const identityEnrichmentMs = nowMs() - hydrationStartedAt;
 
-  const collectors = matches.slice(0, MAX_RETURNED_COLLECTORS).map((wallet) => {
+  const collectors = returnedMatches.map((wallet) => {
     const identity = hydration.identities.get(wallet.address.toLowerCase());
     const profileUrl = identity?.openSeaUrl ?? identity?.openseaProfileUrl ?? `https://opensea.io/${wallet.address}`;
     const institutionalCandidate = {
@@ -162,6 +177,51 @@ export async function POST(req: NextRequest) {
     };
   });
 
+  const totalRouteMs = nowMs() - routeStartedAt;
+  const sourceCounts = discovery.debug.collectionsFetched.reduce(
+    (acc, collection) => {
+      acc[collection.discoverySource] = (acc[collection.discoverySource] ?? 0) + 1;
+      if (collection.fallbackReason) {
+        acc.fallbacks[collection.fallbackReason] =
+          (acc.fallbacks[collection.fallbackReason] ?? 0) + 1;
+      }
+      return acc;
+    },
+    {
+      alchemy: 0,
+      opensea: 0,
+      fallbacks: {} as Record<string, number>,
+    },
+  );
+  const timings = {
+    totalRouteMs,
+    collectionPrepMs,
+    holderDiscoveryMs,
+    rankingFilteringMs,
+    identityEnrichmentMs,
+  };
+
+  if (totalRouteMs >= SLOW_REQUEST_LOG_THRESHOLD_MS) {
+    console.info("[wallet/similar-collectors] slow request", {
+      timings,
+      collectionsReceived,
+      collectionsAttempted: collections.length,
+      collectionsFetched: discovery.debug.collectionsFetched.length,
+      holderSources: {
+        alchemy: sourceCounts.alchemy,
+        opensea: sourceCounts.opensea,
+      },
+      alchemyFallbacks: sourceCounts.fallbacks,
+      candidateHolders: discovery.debug.candidateHolderCount,
+      rankedCandidates: discovery.wallets.length,
+      filteredCandidates: matches.length,
+      returnedCollectors: collectors.length,
+      identitiesRequested: hydration.summary.requested,
+      identitiesFetched: hydration.summary.unique,
+      identityCacheHits: hydration.summary.cached,
+    });
+  }
+
   return NextResponse.json({
     collectors,
     ...(process.env.NODE_ENV === "development" || debug
@@ -171,9 +231,16 @@ export async function POST(req: NextRequest) {
             collectionsReceived,
             maxCollections: MAX_COLLECTIONS,
             maxReturnedCollectors: MAX_RETURNED_COLLECTORS,
+            timings,
             collectionsWithUsableHolders: collectionsWithUsableHolders.length,
             partial: discovery.debug.partial,
             errors: discovery.debug.errors,
+            holderSources: {
+              alchemy: sourceCounts.alchemy,
+              opensea: sourceCounts.opensea,
+            },
+            alchemyFallbacks: sourceCounts.fallbacks,
+            candidateHolders: discovery.debug.candidateHolderCount,
             collectionsFetched: discovery.debug.collectionsFetched.length,
             collectionsCompleted: discovery.debug.collectionsFetched.filter((collection) => collection.complete).length,
             collectionsContributingToResults: contributingCollectionSlugs.length,

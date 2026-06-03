@@ -337,7 +337,6 @@ export async function osSearch(query: string, limit = 15): Promise<OsSearchHit[]
       }>;
     }>(
       `/search?query=${encodeURIComponent(query)}&limit=${limit}`,
-      { next: { revalidate: 60 } } as RequestInit,
     );
     return (data.results ?? [])
       .filter(
@@ -1287,7 +1286,6 @@ export async function searchWalletIdentities(
           }>;
         }>(
           `/search?query=${encodeURIComponent(candidate)}&asset_types=account&limit=${searchLimit}`,
-          { next: { revalidate: 60 } } as RequestInit,
         );
 
         for (const row of data.results ?? []) {

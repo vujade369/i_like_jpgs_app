@@ -82,6 +82,7 @@ type HolderCacheEntry = {
   invalidOwnerCount?: number;
   missingTokenBalanceOwnerCount?: number;
   unsafeTokenBalanceCount?: number;
+  fetchDurationMs?: number;
 };
 
 type AccountIdentityCacheEntry = {
@@ -139,6 +140,9 @@ export type CollectionFetchDebug = {
   invalidOwnerCount?: number;
   missingTokenBalanceOwnerCount?: number;
   unsafeTokenBalanceCount?: number;
+  fetchDurationMs?: number;
+  alchemyFetchDurationMs?: number;
+  openseaFetchDurationMs?: number;
   error?: string;
 };
 
@@ -151,6 +155,7 @@ export type DiscoveryResult = {
     partial: boolean;
     errors: string[];
     collectionFetchConcurrency: number;
+    candidateHolderCount: number;
   };
 };
 
@@ -173,6 +178,9 @@ export type AccountHydrationSummary = {
   failures: string[];
   limit: number;
   concurrency: number;
+  requested: number;
+  unique: number;
+  durationMs: number;
 };
 
 export type AccountIdentityDebug = {
@@ -266,6 +274,10 @@ async function runConcurrently<T>(
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function nowMs(): number {
+  return Date.now();
 }
 
 function firstText(...values: Array<string | null | undefined>): string | undefined {
@@ -568,6 +580,9 @@ function hydrationSummary(
   log: AccountHydrationOutcome[],
   limit: number,
   concurrency: number,
+  requested: number,
+  unique: number,
+  durationMs: number,
 ): AccountHydrationSummary {
   return {
     ok: log.filter((entry) => entry.outcome === "ok").length,
@@ -580,6 +595,9 @@ function hydrationSummary(
     failures: log.filter((entry) => entry.outcome === "fail").map((entry) => entry.address),
     limit,
     concurrency,
+    requested,
+    unique,
+    durationMs,
   };
 }
 
@@ -590,10 +608,14 @@ export async function hydrateAccountIdentities(
     concurrency?: number;
   } = {},
 ): Promise<AccountHydrationResult> {
+  const startedAt = nowMs();
   const limit = options.limit ?? ACCOUNT_HYDRATION_LIMIT;
   const concurrency = options.concurrency ?? ACCOUNT_HYDRATION_CONCURRENCY;
-  const limitedAddresses = addresses.slice(0, limit);
-  const skippedAddresses = addresses.slice(limit);
+  const orderedUniqueAddresses = Array.from(
+    new Set(addresses.map((address) => address.toLowerCase())),
+  );
+  const limitedAddresses = orderedUniqueAddresses.slice(0, limit);
+  const skippedAddresses = orderedUniqueAddresses.slice(limit);
   const log: AccountHydrationOutcome[] = skippedAddresses.map((address) => ({
     address,
     outcome: "skip",
@@ -626,9 +648,24 @@ export async function hydrateAccountIdentities(
     concurrency,
   );
 
+  const identities = new Map<string, HydratedAccountIdentity>();
+  for (let i = 0; i < hydrated.length; i++) {
+    const identity = hydrated[i];
+    const requestedAddress = limitedAddresses[i];
+    identities.set(requestedAddress, identity);
+    identities.set(identity.address.toLowerCase(), identity);
+  }
+
   return {
-    identities: new Map(hydrated.map((identity) => [identity.address.toLowerCase(), identity])),
-    summary: hydrationSummary(log, limit, concurrency),
+    identities,
+    summary: hydrationSummary(
+      log,
+      limit,
+      concurrency,
+      addresses.length,
+      limitedAddresses.length,
+      nowMs() - startedAt,
+    ),
   };
 }
 
@@ -810,8 +847,18 @@ export async function fetchCollectionHolders(
   slug: string,
 ): Promise<{ entry: HolderCacheEntry; cached: boolean }> {
   const hit = getCached(slug);
-  if (hit) return { entry: hit, cached: true };
+  if (hit) {
+    return {
+      entry: {
+        ...hit,
+        fetchDurationMs: 0,
+      },
+      cached: true,
+    };
+  }
+  const startedAt = nowMs();
   const result = await fetchFromApi(slug);
+  result.fetchDurationMs = nowMs() - startedAt;
   if (result.complete) {
     holderCache.set(slug, result);
   }
@@ -887,10 +934,23 @@ async function fetchAlchemyCollectionHolders(
 
   const cacheKey = `alchemy:${network}:${contractAddress.toLowerCase()}`;
   const hit = getCached(cacheKey);
-  if (hit) return { status: "ok", value: { entry: hit, cached: true } };
+  if (hit) {
+    return {
+      status: "ok",
+      value: {
+        entry: {
+          ...hit,
+          fetchDurationMs: 0,
+        },
+        cached: true,
+      },
+    };
+  }
 
   try {
+    const startedAt = nowMs();
     const result = await fetchAlchemyOwnersForContract({ contractAddress, chain });
+    const fetchDurationMs = nowMs() - startedAt;
     const holders = result.owners;
     const entry: HolderCacheEntry = {
       fetchedAt: Date.now(),
@@ -921,6 +981,7 @@ async function fetchAlchemyCollectionHolders(
       invalidOwnerCount: result.invalidOwnerCount,
       missingTokenBalanceOwnerCount: result.missingTokenBalanceOwnerCount,
       unsafeTokenBalanceCount: result.unsafeTokenBalanceCount,
+      fetchDurationMs,
     };
 
     holderCache.set(cacheKey, entry);
@@ -935,13 +996,29 @@ async function fetchAlchemyCollectionHolders(
 
 async function fetchCollectionHoldersForDiscovery(
   collection: CollectionRef,
-): Promise<{ entry: HolderCacheEntry; cached: boolean }> {
+): Promise<{
+  entry: HolderCacheEntry;
+  cached: boolean;
+  alchemyFetchDurationMs?: number;
+  openseaFetchDurationMs?: number;
+}> {
+  const alchemyStartedAt = nowMs();
   const alchemyAttempt = await fetchAlchemyCollectionHolders(collection);
-  if (alchemyAttempt.status === "ok") return alchemyAttempt.value;
+  const alchemyFetchDurationMs = nowMs() - alchemyStartedAt;
+  if (alchemyAttempt.status === "ok") {
+    return {
+      ...alchemyAttempt.value,
+      alchemyFetchDurationMs,
+    };
+  }
 
+  const openseaStartedAt = nowMs();
   const result = await fetchCollectionHolders(collection.slug);
+  const openseaFetchDurationMs = nowMs() - openseaStartedAt;
   return {
     ...result,
+    alchemyFetchDurationMs,
+    openseaFetchDurationMs,
     entry: {
       ...result.entry,
       ...emptyAlchemyFallbackEntry(alchemyAttempt.reason),
@@ -959,7 +1036,15 @@ export async function discoverWalletsForCollections(
   const limited = collections.slice(0, maxCollections);
 
   type SettledResult =
-    | { status: "fulfilled"; value: { entry: HolderCacheEntry; cached: boolean } }
+    | {
+        status: "fulfilled";
+        value: {
+          entry: HolderCacheEntry;
+          cached: boolean;
+          alchemyFetchDurationMs?: number;
+          openseaFetchDurationMs?: number;
+        };
+      }
     | { status: "rejected"; reason: unknown };
 
   const settled = await runConcurrently(
@@ -983,7 +1068,7 @@ export async function discoverWalletsForCollections(
     const result = settled[i];
     const endpointPath = `/api/v2/collections/${col.slug}/holders`;
     if (result.status === "fulfilled") {
-      const { entry, cached } = result.value;
+      const { entry, cached, alchemyFetchDurationMs, openseaFetchDurationMs } = result.value;
       holdersBySlug.set(col.slug, entry.holders);
       collectionsFetched.push({
         slug: col.slug,
@@ -1016,6 +1101,9 @@ export async function discoverWalletsForCollections(
         invalidOwnerCount: entry.invalidOwnerCount,
         missingTokenBalanceOwnerCount: entry.missingTokenBalanceOwnerCount,
         unsafeTokenBalanceCount: entry.unsafeTokenBalanceCount,
+        fetchDurationMs: entry.fetchDurationMs,
+        alchemyFetchDurationMs,
+        openseaFetchDurationMs,
       });
     } else {
       const msg = result.reason instanceof Error ? result.reason.message : String(result.reason);
@@ -1051,6 +1139,9 @@ export async function discoverWalletsForCollections(
         invalidOwnerCount: undefined,
         missingTokenBalanceOwnerCount: undefined,
         unsafeTokenBalanceCount: undefined,
+        fetchDurationMs: 0,
+        alchemyFetchDurationMs: undefined,
+        openseaFetchDurationMs: undefined,
         error: msg,
       });
     }
@@ -1122,6 +1213,7 @@ export async function discoverWalletsForCollections(
       partial: errors.length > 0 || collectionsFetched.some((c) => !c.complete),
       errors,
       collectionFetchConcurrency: COLLECTION_FETCH_CONCURRENCY,
+      candidateHolderCount: walletMap.size,
     },
   };
 }
