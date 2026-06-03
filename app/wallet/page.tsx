@@ -135,7 +135,7 @@ type CollectorProofCollection = SimilarCollector["matchedCollections"][number];
 
 const MAX_WALLETS = 2;
 const SHOW_TOP_ARTISTS = false;
-const SIMILAR_COLLECTOR_COLLECTION_LIMIT = 22;
+const SIMILAR_COLLECTOR_COLLECTION_LIMIT = 15;
 const SIMILAR_COLLECTOR_COLLAPSED_DISPLAY_LIMIT = 5;
 const SIMILAR_COLLECTOR_EXPANDED_DISPLAY_LIMIT = 10;
 const MIN_SIMILAR_COLLECTOR_SHARED_COLLECTIONS = 2;
@@ -716,7 +716,7 @@ export default function WalletReadPage() {
                 <Panel style={supportPanelStyle}>
                   <SectionHeading
                     title="Collectors nearby"
-                    detail="Wallets with visible overlap across this wallet’s strongest collection signals."
+                    detail="Ranked by shared collection count first, then weighted by how deeply each collector holds those shared collections."
                   />
                   <style>{`
                     .ilj-similar-collector-link { transition: opacity 0.15s; }
