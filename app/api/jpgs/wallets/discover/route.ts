@@ -82,6 +82,8 @@ export async function POST(req: NextRequest) {
       openseaUsername: identity?.username ?? null,
       openSeaUrl: profileUrl,
       openseaProfileUrl: profileUrl,
+      twitterUrl: identity?.twitterUrl ?? null,
+      instagramUrl: identity?.instagramUrl ?? null,
       identitySource: identity?.identitySource ?? "fallback",
       matchedCollections: wallet.matchedCollections,
       matchedCollectionCount: wallet.matchedCollectionCount,

@@ -539,6 +539,11 @@ export async function fetchWalletNfts(
 
 // ─── Account profiles ─────────────────────────────────────────────────────────
 
+type OsSocialMediaAccount = {
+  platform?: string;
+  username?: string;
+};
+
 export type OsAccount = {
   address: string;
   username?: string;
@@ -555,6 +560,8 @@ export type OsAccount = {
   avatar_url?: string;
   avatarUrl?: string;
   avatar?: string;
+  social_media_accounts?: OsSocialMediaAccount[];
+  socialMediaAccounts?: OsSocialMediaAccount[];
   account?: {
     address?: string;
     username?: string;
@@ -571,6 +578,8 @@ export type OsAccount = {
     avatar_url?: string;
     avatarUrl?: string;
     avatar?: string;
+    social_media_accounts?: OsSocialMediaAccount[];
+    socialMediaAccounts?: OsSocialMediaAccount[];
   };
   user?: {
     username?: string;
@@ -587,6 +596,8 @@ export type OsAccount = {
     avatar_url?: string;
     avatarUrl?: string;
     avatar?: string;
+    social_media_accounts?: OsSocialMediaAccount[];
+    socialMediaAccounts?: OsSocialMediaAccount[];
   };
 };
 
@@ -741,6 +752,8 @@ export type OpenSeaAccountIdentity = {
   avatarUrl?: string;
   profileImageUrl?: string;
   imageUrl?: string;
+  twitterUrl?: string;
+  instagramUrl?: string;
   openSeaUrl: string;
   openseaProfileUrl: string;
   identitySource: "account" | "account+resolve" | "resolve" | "fallback";
@@ -885,6 +898,41 @@ function avatarFromAccount(account?: OsAccount | null): string | undefined {
   );
 }
 
+function socialAccountsFromAccount(account?: OsAccount | null): OsSocialMediaAccount[] {
+  if (!account) return [];
+  return [
+    ...(account.social_media_accounts ?? []),
+    ...(account.socialMediaAccounts ?? []),
+    ...(account.account?.social_media_accounts ?? []),
+    ...(account.account?.socialMediaAccounts ?? []),
+    ...(account.user?.social_media_accounts ?? []),
+    ...(account.user?.socialMediaAccounts ?? []),
+  ];
+}
+
+function socialUsernameToUrl(username: string, baseUrl: string): string | undefined {
+  const handle = username.trim().replace(/^@+/, "");
+  if (!handle || /^https?:\/\//i.test(handle)) return undefined;
+  if (!/^[A-Za-z0-9._-]+$/.test(handle)) return undefined;
+  return `${baseUrl}/${handle}`;
+}
+
+function socialUrlFromAccount(
+  account: OsAccount | null | undefined,
+  platforms: string[],
+  baseUrl: string,
+): string | undefined {
+  const platformSet = new Set(platforms.map((platform) => platform.toLowerCase()));
+  for (const social of socialAccountsFromAccount(account)) {
+    const platform = social.platform?.trim().toLowerCase();
+    const username = social.username;
+    if (!platform || !username || !platformSet.has(platform)) continue;
+    const url = socialUsernameToUrl(username, baseUrl);
+    if (url) return url;
+  }
+  return undefined;
+}
+
 export function normalizeOpenSeaAccountIdentity(
   address: string,
   account?: OsAccount | null,
@@ -906,6 +954,12 @@ export function normalizeOpenSeaAccountIdentity(
     profileImageFromAccount(account) ?? profileImageFromAccount(resolvedAccount);
   const imageUrl = imageFromAccount(account) ?? imageFromAccount(resolvedAccount);
   const avatarUrl = avatarFromAccount(account) ?? avatarFromAccount(resolvedAccount);
+  const twitterUrl =
+    socialUrlFromAccount(account, ["twitter", "x"], "https://x.com") ??
+    socialUrlFromAccount(resolvedAccount, ["twitter", "x"], "https://x.com");
+  const instagramUrl =
+    socialUrlFromAccount(account, ["instagram"], "https://instagram.com") ??
+    socialUrlFromAccount(resolvedAccount, ["instagram"], "https://instagram.com");
   const profileIdentifier = username || ens || normalizedAddress;
   const identitySource = account
     ? resolvedAccount
@@ -923,6 +977,8 @@ export function normalizeOpenSeaAccountIdentity(
     avatarUrl,
     profileImageUrl,
     imageUrl,
+    twitterUrl,
+    instagramUrl,
     openSeaUrl: `https://opensea.io/${profileIdentifier}`,
     openseaProfileUrl: `https://opensea.io/${profileIdentifier}`,
     identitySource,

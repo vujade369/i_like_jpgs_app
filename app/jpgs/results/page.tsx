@@ -37,6 +37,8 @@ type CollectorWallet = {
   openseaUsername?: string | null;
   openSeaUrl?: string;
   openseaProfileUrl: string;
+  twitterUrl?: string | null;
+  instagramUrl?: string | null;
   identitySource?: string;
   matchedCollections: MatchedCollection[];
   matchedCollectionCount: number;
@@ -343,7 +345,6 @@ function ResultsInner() {
         .ilj-collector-link { transition: opacity 0.15s; }
         .ilj-collector-link:hover { opacity: 0.7; }
         .ilj-jpgs-profile-action {
-          justify-self: start;
           color: rgb(149, 117, 255);
           font-size: 11px;
           line-height: 1.2;
@@ -353,6 +354,16 @@ function ResultsInner() {
         }
         .ilj-jpgs-profile-action:hover {
           opacity: 0.72;
+        }
+        .ilj-jpgs-profile-links {
+          justify-self: start;
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 5px;
+          color: rgba(168,164,157,0.46);
+          font-size: 11px;
+          line-height: 1.2;
         }
         .ilj-jpgs-collector-card {
           background: #161616;
@@ -503,15 +514,45 @@ function CollectorCard({ wallet, rank }: { wallet: CollectorWallet; rank: number
           )}
 
           <p className="ilj-jpgs-collector-summary">{summary}</p>
-          <a
-            href={openSeaUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="ilj-jpgs-profile-action"
-            aria-label={`View ${label} on OpenSea`}
-          >
-            View profile -&gt;
-          </a>
+          <div className="ilj-jpgs-profile-links">
+            <a
+              href={openSeaUrl}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="ilj-jpgs-profile-action"
+              aria-label={`View ${label} on OpenSea`}
+            >
+              View profile -&gt;
+            </a>
+            {wallet.twitterUrl ? (
+              <>
+                <span aria-hidden="true">·</span>
+                <a
+                  href={wallet.twitterUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="ilj-jpgs-profile-action"
+                  aria-label={`View ${label} on X`}
+                >
+                  X
+                </a>
+              </>
+            ) : null}
+            {wallet.instagramUrl ? (
+              <>
+                <span aria-hidden="true">·</span>
+                <a
+                  href={wallet.instagramUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="ilj-jpgs-profile-action"
+                  aria-label={`View ${label} on Instagram`}
+                >
+                  Instagram
+                </a>
+              </>
+            ) : null}
+          </div>
         </div>
       </div>
 
