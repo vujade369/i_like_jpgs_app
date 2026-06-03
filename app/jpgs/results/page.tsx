@@ -15,6 +15,7 @@ type CollectionRef = {
   name: string;
   image_url?: string;
   contract?: string;
+  chain?: string;
 };
 
 type MatchedCollection = {
@@ -234,6 +235,7 @@ function ResultsInner() {
         name: col.name,
         image_url: col.image_url,
         contract: col.contracts?.[0]?.address,
+        chain: col.contracts?.[0]?.chain,
       },
     ];
     setCollections(next);
@@ -328,7 +330,7 @@ function ResultsInner() {
           <>
             {partial && (
               <p style={{ fontSize: 12, color: "rgba(168,164,157,0.5)", marginBottom: 16 }}>
-                Showing the strongest matches found so far.
+                Showing the strongest matches found so far. Ranked by shared collections first, then weighted depth across the selected mix.
               </p>
             )}
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>

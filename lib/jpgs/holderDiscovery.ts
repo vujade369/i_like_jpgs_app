@@ -7,6 +7,12 @@ import {
   type OpenSeaIdentityFetchStatus,
   type OsAccount,
 } from "./opensea";
+import {
+  AlchemyOwnerFetchError,
+  alchemyNetworkForChain,
+  fetchAlchemyOwnersForContract,
+  type AlchemyFallbackReason,
+} from "./alchemy";
 
 const OPENSEA_BASE = "https://api.opensea.io/api/v2";
 const HOLDER_PAGE_SIZE = 100;
@@ -39,9 +45,12 @@ export type CollectionRef = {
   name: string;
   image_url?: string;
   contract?: string;
+  chain?: string;
+  contracts?: Array<{ address: string; chain?: string }>;
 };
 
 type HolderRecord = { address: string; quantity: number };
+type HolderDiscoverySource = "alchemy" | "opensea";
 
 type HolderCacheEntry = {
   fetchedAt: number;
@@ -66,6 +75,13 @@ type HolderCacheEntry = {
   lastRetryAfterHeader: string | undefined;
   lastRetryAfterMs: number | undefined;
   pageDelayMs: number;
+  discoverySource: HolderDiscoverySource;
+  fallbackReason?: AlchemyFallbackReason;
+  usableOwnerCount?: number;
+  blockedOwnerCount?: number;
+  invalidOwnerCount?: number;
+  missingTokenBalanceOwnerCount?: number;
+  unsafeTokenBalanceCount?: number;
 };
 
 type AccountIdentityCacheEntry = {
@@ -80,6 +96,10 @@ export type MatchedCollection = {
   image_url?: string;
   heldCount: number;
 };
+
+function collectionDepthScore(matchedCollections: MatchedCollection[]): number {
+  return matchedCollections.reduce((sum, c) => sum + Math.log2(1 + c.heldCount), 0);
+}
 
 export type WalletMatch = {
   address: string;
@@ -112,6 +132,13 @@ export type CollectionFetchDebug = {
   lastRetryAfterHeader: string | undefined;
   lastRetryAfterMs: number | undefined;
   pageDelayMs: number;
+  discoverySource: HolderDiscoverySource;
+  fallbackReason?: AlchemyFallbackReason;
+  usableOwnerCount?: number;
+  blockedOwnerCount?: number;
+  invalidOwnerCount?: number;
+  missingTokenBalanceOwnerCount?: number;
+  unsafeTokenBalanceCount?: number;
   error?: string;
 };
 
@@ -775,6 +802,7 @@ async function fetchFromApi(slug: string): Promise<HolderCacheEntry> {
     lastRetryAfterHeader,
     lastRetryAfterMs,
     pageDelayMs: HOLDER_PAGE_DELAY_MS,
+    discoverySource: "opensea",
   };
 }
 
@@ -788,6 +816,137 @@ export async function fetchCollectionHolders(
     holderCache.set(slug, result);
   }
   return { entry: result, cached: false };
+}
+
+function collectionContractAndChain(collection: CollectionRef): {
+  contractAddress?: string;
+  chain?: string;
+} {
+  const firstContract = collection.contracts?.[0];
+  return {
+    contractAddress: firstContract?.address || collection.contract,
+    chain: firstContract?.chain || collection.chain || "ethereum",
+  };
+}
+
+function emptyAlchemyFallbackEntry(
+  reason: AlchemyFallbackReason,
+): Pick<
+  HolderCacheEntry,
+  | "discoverySource"
+  | "fallbackReason"
+  | "usableOwnerCount"
+  | "blockedOwnerCount"
+  | "invalidOwnerCount"
+  | "missingTokenBalanceOwnerCount"
+  | "unsafeTokenBalanceCount"
+> {
+  return {
+    discoverySource: "opensea",
+    fallbackReason: reason,
+    usableOwnerCount: undefined,
+    blockedOwnerCount: undefined,
+    invalidOwnerCount: undefined,
+    missingTokenBalanceOwnerCount: undefined,
+    unsafeTokenBalanceCount: undefined,
+  };
+}
+
+function logAlchemyFallback(
+  collection: CollectionRef,
+  reason: AlchemyFallbackReason,
+  chain?: string,
+): void {
+  const unexpectedProductionError = reason === "server_error";
+  if (process.env.NODE_ENV === "development" || unexpectedProductionError) {
+    console.warn("[jpgs/holder-discovery] Alchemy holder discovery fallback", {
+      slug: collection.slug,
+      chain: chain ?? null,
+      reason,
+    });
+  }
+}
+
+async function fetchAlchemyCollectionHolders(
+  collection: CollectionRef,
+): Promise<
+  | { status: "ok"; value: { entry: HolderCacheEntry; cached: boolean } }
+  | { status: "fallback"; reason: AlchemyFallbackReason }
+> {
+  const { contractAddress, chain } = collectionContractAndChain(collection);
+
+  if (!contractAddress) {
+    return { status: "fallback", reason: "missing_contract" };
+  }
+
+  const network = alchemyNetworkForChain(chain);
+  if (!network) {
+    logAlchemyFallback(collection, "unmapped_chain", chain);
+    return { status: "fallback", reason: "unmapped_chain" };
+  }
+
+  const cacheKey = `alchemy:${network}:${contractAddress.toLowerCase()}`;
+  const hit = getCached(cacheKey);
+  if (hit) return { status: "ok", value: { entry: hit, cached: true } };
+
+  try {
+    const result = await fetchAlchemyOwnersForContract({ contractAddress, chain });
+    const holders = result.owners;
+    const entry: HolderCacheEntry = {
+      fetchedAt: Date.now(),
+      holders,
+      complete: result.stoppedReason === "complete",
+      fetchedCount: holders.length,
+      nextCursorStoppedReason: result.stoppedReason,
+      pageCount: result.pageCount,
+      rawRowsFetched: result.rawOwnerCount,
+      uniqueHolderCount: holders.length,
+      duplicateHolderRows: Math.max(0, result.rawOwnerCount - holders.length),
+      firstPageFirstHolder: holders[0]?.address,
+      lastPageFirstHolder: holders[0]?.address,
+      cursorChanged: result.pageCount > 1,
+      requestUrls: [],
+      rateLimitRetryAttempts: 0,
+      rateLimitedPageCount: 0,
+      retryExhaustedPageCount: 0,
+      lastRetryDelayMs: 0,
+      totalRetryDelayMs: 0,
+      retryDelayMsSamples: [],
+      lastRetryAfterHeader: undefined,
+      lastRetryAfterMs: undefined,
+      pageDelayMs: 0,
+      discoverySource: "alchemy",
+      usableOwnerCount: result.usableOwnerCount,
+      blockedOwnerCount: result.blockedOwnerCount,
+      invalidOwnerCount: result.invalidOwnerCount,
+      missingTokenBalanceOwnerCount: result.missingTokenBalanceOwnerCount,
+      unsafeTokenBalanceCount: result.unsafeTokenBalanceCount,
+    };
+
+    holderCache.set(cacheKey, entry);
+    return { status: "ok", value: { entry, cached: false } };
+  } catch (error: unknown) {
+    const reason =
+      error instanceof AlchemyOwnerFetchError ? error.reason : "server_error";
+    logAlchemyFallback(collection, reason, chain);
+    return { status: "fallback", reason };
+  }
+}
+
+async function fetchCollectionHoldersForDiscovery(
+  collection: CollectionRef,
+): Promise<{ entry: HolderCacheEntry; cached: boolean }> {
+  const alchemyAttempt = await fetchAlchemyCollectionHolders(collection);
+  if (alchemyAttempt.status === "ok") return alchemyAttempt.value;
+
+  const result = await fetchCollectionHolders(collection.slug);
+  return {
+    ...result,
+    entry: {
+      ...result.entry,
+      ...emptyAlchemyFallbackEntry(alchemyAttempt.reason),
+    },
+  };
 }
 
 // ─── Discovery ────────────────────────────────────────────────────────────────
@@ -806,7 +965,7 @@ export async function discoverWalletsForCollections(
   const settled = await runConcurrently(
     limited.map((col) => async (): Promise<SettledResult> => {
       try {
-        const value = await fetchCollectionHolders(col.slug);
+        const value = await fetchCollectionHoldersForDiscovery(col);
         return { status: "fulfilled", value };
       } catch (reason) {
         return { status: "rejected", reason };
@@ -850,6 +1009,13 @@ export async function discoverWalletsForCollections(
         lastRetryAfterHeader: entry.lastRetryAfterHeader,
         lastRetryAfterMs: entry.lastRetryAfterMs,
         pageDelayMs: entry.pageDelayMs,
+        discoverySource: entry.discoverySource,
+        fallbackReason: entry.fallbackReason,
+        usableOwnerCount: entry.usableOwnerCount,
+        blockedOwnerCount: entry.blockedOwnerCount,
+        invalidOwnerCount: entry.invalidOwnerCount,
+        missingTokenBalanceOwnerCount: entry.missingTokenBalanceOwnerCount,
+        unsafeTokenBalanceCount: entry.unsafeTokenBalanceCount,
       });
     } else {
       const msg = result.reason instanceof Error ? result.reason.message : String(result.reason);
@@ -878,6 +1044,13 @@ export async function discoverWalletsForCollections(
         lastRetryAfterHeader: undefined,
         lastRetryAfterMs: undefined,
         pageDelayMs: HOLDER_PAGE_DELAY_MS,
+        discoverySource: "opensea",
+        fallbackReason: undefined,
+        usableOwnerCount: undefined,
+        blockedOwnerCount: undefined,
+        invalidOwnerCount: undefined,
+        missingTokenBalanceOwnerCount: undefined,
+        unsafeTokenBalanceCount: undefined,
         error: msg,
       });
     }
@@ -923,14 +1096,22 @@ export async function discoverWalletsForCollections(
     });
   }
 
-  // Rank: matchedCollectionCount desc → totalHeldFromSelected desc → address asc
-  const ranked = Array.from(walletMap.values()).sort((a, b) => {
-    if (b.matchedCollectionCount !== a.matchedCollectionCount)
-      return b.matchedCollectionCount - a.matchedCollectionCount;
-    if (b.totalHeldFromSelected !== a.totalHeldFromSelected)
-      return b.totalHeldFromSelected - a.totalHeldFromSelected;
-    return a.address.localeCompare(b.address);
-  });
+  // Rank: matchedCollectionCount desc → balanced collection depth desc → totalHeldFromSelected desc → address asc
+  const ranked = Array.from(walletMap.values())
+    .map((wallet) => ({
+      wallet,
+      collectionDepthScore: collectionDepthScore(wallet.matchedCollections),
+    }))
+    .sort((a, b) => {
+      if (b.wallet.matchedCollectionCount !== a.wallet.matchedCollectionCount)
+        return b.wallet.matchedCollectionCount - a.wallet.matchedCollectionCount;
+      if (b.collectionDepthScore !== a.collectionDepthScore)
+        return b.collectionDepthScore - a.collectionDepthScore;
+      if (b.wallet.totalHeldFromSelected !== a.wallet.totalHeldFromSelected)
+        return b.wallet.totalHeldFromSelected - a.wallet.totalHeldFromSelected;
+      return a.wallet.address.localeCompare(b.wallet.address);
+    })
+    .map(({ wallet }) => wallet);
 
   return {
     wallets: ranked,

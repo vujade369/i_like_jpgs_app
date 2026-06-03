@@ -9,7 +9,7 @@ export type OsCollection = {
   image_url?: string;
   safelist_request_status?: string;
   safelist_status?: string;
-  contracts?: Array<{ address: string }>;
+  contracts?: Array<{ address: string; chain?: string }>;
   opensea_url?: string;
 };
 

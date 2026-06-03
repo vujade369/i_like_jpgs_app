@@ -9,6 +9,7 @@ type CollectionRef = {
   name: string;
   image_url?: string;
   contract?: string;
+  chain?: string;
 };
 
 type Props = {

@@ -106,6 +106,7 @@ export default function JpgsPage() {
           name: c.name,
           image_url: c.image_url,
           contract: c.contracts?.[0]?.address,
+          chain: c.contracts?.[0]?.chain,
         })),
       ),
     );
