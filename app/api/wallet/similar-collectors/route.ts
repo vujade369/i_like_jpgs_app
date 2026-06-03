@@ -9,7 +9,9 @@ import {
   getInstitutionalWalletReason,
 } from "@/lib/jpgs/institutionalWallets";
 
-const MAX_COLLECTIONS = 22;
+export const maxDuration = 300;
+
+const MAX_COLLECTIONS = 5;
 const MAX_DISCOVERED_COLLECTORS = 20;
 const MAX_RETURNED_COLLECTORS = 10;
 const MIN_SHARED_COLLECTIONS = 2;

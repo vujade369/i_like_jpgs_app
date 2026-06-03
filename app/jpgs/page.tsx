@@ -270,7 +270,7 @@ export default function JpgsPage() {
 
           {atMax && (
             <p style={{ fontSize: 12, color: "rgba(168,164,157,0.45)", marginBottom: 20, paddingLeft: 2 }}>
-              Maximum 10. Remove a collection to add another.
+              Maximum 5. Remove a collection to add another.
             </p>
           )}
 
