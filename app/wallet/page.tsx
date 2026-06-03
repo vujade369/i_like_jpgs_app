@@ -99,6 +99,7 @@ type WalletReadErrorResponse = Partial<WalletReadResponse> & {
 };
 
 type ReadState = "idle" | "loading" | "success" | "empty" | "error";
+type SimilarCollectorsState = "idle" | "loading" | "success" | "empty" | "error";
 type ActiveWalletView = "combined" | string;
 
 type SimilarCollector = {
@@ -206,6 +207,7 @@ export default function WalletReadPage() {
   const [resolvedWallet, setResolvedWallet] = useState("");
   const [selectedSuggestion, setSelectedSuggestion] = useState<WalletSuggestion | null>(null);
   const [similarCollectors, setSimilarCollectors] = useState<SimilarCollector[]>([]);
+  const [similarCollectorsState, setSimilarCollectorsState] = useState<SimilarCollectorsState>("idle");
   const [hideInstitutional, setHideInstitutional] = useState(false);
   const [showAllNearbyCollectors, setShowAllNearbyCollectors] = useState(false);
   const requestSeq = useRef(0);
@@ -309,7 +311,6 @@ export default function WalletReadPage() {
     const similarCollectorCollections = profile?.similarCollectorCollections ?? profile?.topCollections ?? [];
 
     if (state !== "success" || !profile || similarCollectorCollections.length < 2) {
-      setSimilarCollectors([]);
       return;
     }
 
@@ -326,9 +327,10 @@ export default function WalletReadPage() {
         contracts: collection.contracts,
       }));
 
-    setSimilarCollectors([]);
-
     async function fetchSimilarCollectors() {
+      setSimilarCollectors([]);
+      setSimilarCollectorsState("loading");
+
       try {
         const res = await fetch("/api/wallet/similar-collectors", {
           method: "POST",
@@ -336,7 +338,10 @@ export default function WalletReadPage() {
           signal: controller.signal,
           body: JSON.stringify({ sourceWallets, collections }),
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          if (!controller.signal.aborted) setSimilarCollectorsState("error");
+          return;
+        }
 
         const data = (await res.json()) as SimilarCollectorsResponse;
         if (!controller.signal.aborted) {
@@ -344,9 +349,13 @@ export default function WalletReadPage() {
             .filter((collector) => collector.sharedCollectionCount >= MIN_SIMILAR_COLLECTOR_SHARED_COLLECTIONS);
           setSimilarCollectors(meaningfulCollectors);
           setShowAllNearbyCollectors(false);
+          setSimilarCollectorsState(meaningfulCollectors.length > 0 ? "success" : "empty");
         }
       } catch {
-        if (!controller.signal.aborted) setSimilarCollectors([]);
+        if (!controller.signal.aborted) {
+          setSimilarCollectors([]);
+          setSimilarCollectorsState("error");
+        }
       }
     }
 
@@ -418,6 +427,13 @@ export default function WalletReadPage() {
   const hiddenInstitutionalCollectorCount = hideInstitutional
     ? sourceCollectors.filter((c) => c.isInstitutionalWallet).length
     : 0;
+  const canFetchSimilarCollectors =
+    state === "success" &&
+    Boolean(profile) &&
+    (profile?.similarCollectorCollections ?? profile?.topCollections ?? []).length >= 2;
+  const isSimilarCollectorsLoading = similarCollectorsState === "loading";
+  const showNearbyCollectorsSection =
+    canFetchSimilarCollectors && (isSimilarCollectorsLoading || similarCollectors.length > 0);
 
   const hasResult = state === "success" || state === "empty";
 
@@ -712,11 +728,11 @@ export default function WalletReadPage() {
                 </Panel>
               )}
 
-              {similarCollectors.length > 0 && (
+              {showNearbyCollectorsSection && (
                 <Panel style={supportPanelStyle}>
                   <SectionHeading
                     title="Collectors nearby"
-                    detail="Ranked by shared collection count first, then weighted by how deeply each collector holds those shared collections."
+                    detail="Looking across this wallet's top 15 visible collections to find collectors with nearby taste. Ranked by shared collection count first, then weighted by how deeply each collector holds those shared collections."
                   />
                   <style>{`
                     .ilj-similar-collector-link { transition: opacity 0.15s; }
@@ -782,6 +798,29 @@ export default function WalletReadPage() {
                       min-width: 0;
                       align-self: center;
                     }
+                    .ilj-wallet-similar-loading {
+                      display: grid;
+                      gap: 16px;
+                      border: 1px solid rgba(255,255,255,0.07);
+                      border-radius: 14px;
+                      padding: 18px;
+                      background: #161616;
+                    }
+                    .ilj-wallet-similar-loading-bars {
+                      display: grid;
+                      gap: 10px;
+                    }
+                    .ilj-wallet-similar-loading-bar {
+                      height: 10px;
+                      border-radius: 999px;
+                      background: linear-gradient(90deg, rgba(255,255,255,0.055), rgba(149,117,255,0.16), rgba(255,255,255,0.055));
+                      background-size: 200% 100%;
+                      animation: iljWalletSimilarLoading 1.6s ease-in-out infinite;
+                    }
+                    @keyframes iljWalletSimilarLoading {
+                      0% { background-position: 100% 0; }
+                      100% { background-position: -100% 0; }
+                    }
                     @media (max-width: 760px) {
                       .ilj-wallet-similar-card {
                         grid-template-columns: minmax(0, 1fr);
@@ -796,16 +835,20 @@ export default function WalletReadPage() {
                       }
                     }
                   `}</style>
-                  <div style={similarCollectorGridStyle}>
-                    {visibleCollectors.map((collector) => (
-                      <SimilarCollectorCard
-                        key={collector.address}
-                        collector={collector}
-                        rank={sourceCollectors.findIndex((item) => item.address === collector.address) + 1}
-                      />
-                    ))}
-                  </div>
-                  {hasMoreVisibleCollectors && (
+                  {isSimilarCollectorsLoading ? (
+                    <SimilarCollectorsLoadingState />
+                  ) : (
+                    <div style={similarCollectorGridStyle}>
+                      {visibleCollectors.map((collector) => (
+                        <SimilarCollectorCard
+                          key={collector.address}
+                          collector={collector}
+                          rank={sourceCollectors.findIndex((item) => item.address === collector.address) + 1}
+                        />
+                      ))}
+                    </div>
+                  )}
+                  {!isSimilarCollectorsLoading && hasMoreVisibleCollectors && (
                     <button
                       type="button"
                       aria-expanded={showAllNearbyCollectors}
@@ -1506,6 +1549,30 @@ function CollectionImage({ collection, size = 56 }: { collection: TopCollection;
   );
 }
 
+function SimilarCollectorsLoadingState() {
+  return (
+    <div
+      className="ilj-wallet-similar-loading"
+      role="status"
+      aria-live="polite"
+      aria-label="Finding nearby collectors"
+    >
+      <div>
+        <p style={{ ...eyebrowStyle, marginBottom: 8 }}>Reading overlap</p>
+        <h3 style={nearbyCollectorsLoadingTitleStyle}>Finding nearby collectors</h3>
+        <p style={nearbyCollectorsLoadingBodyStyle}>
+          {"Reading this wallet's top collections and looking for people with overlapping taste."}
+        </p>
+      </div>
+      <div className="ilj-wallet-similar-loading-bars" aria-hidden="true">
+        <span className="ilj-wallet-similar-loading-bar" style={{ width: "88%" }} />
+        <span className="ilj-wallet-similar-loading-bar" style={{ width: "64%" }} />
+        <span className="ilj-wallet-similar-loading-bar" style={{ width: "76%" }} />
+      </div>
+    </div>
+  );
+}
+
 function SimilarCollectorCard({ collector, rank }: { collector: SimilarCollector; rank: number }) {
   const [avatarFailed, setAvatarFailed] = useState(false);
   const label = collector.ens || collector.displayName || collector.username || collector.shortWallet;
@@ -1868,6 +1935,21 @@ const similarCollectorRevealButtonStyle: React.CSSProperties = {
   fontSize: 11,
   lineHeight: 1.1,
   cursor: "pointer",
+};
+
+const nearbyCollectorsLoadingTitleStyle: React.CSSProperties = {
+  color: "rgb(240,237,230)",
+  fontSize: 15,
+  fontWeight: 500,
+  lineHeight: 1.35,
+  marginBottom: 6,
+};
+
+const nearbyCollectorsLoadingBodyStyle: React.CSSProperties = {
+  color: "var(--jpgs-muted)",
+  fontSize: 13,
+  lineHeight: 1.6,
+  maxWidth: 520,
 };
 
 const similarCollectorAvatarLinkStyle: React.CSSProperties = {
