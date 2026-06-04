@@ -386,6 +386,9 @@ function ResultsInner() {
           align-items: stretch;
           min-width: 0;
         }
+        .ilj-jpgs-collector-card:nth-child(even) {
+          background: #181719;
+        }
         .ilj-jpgs-collector-identity {
           display: grid;
           grid-template-columns: 56px minmax(0, 1fr);

@@ -14,10 +14,14 @@ export type SharedCollectionCardItem = {
 type SharedCollectionsStripProps = {
   label: string;
   collections: SharedCollectionCardItem[];
+  desktopVisibleCount?: number;
+  mobileVisibleCount?: number;
 };
 
 const COUNT_FORMATTER = new Intl.NumberFormat("en-US");
-const COLLAPSED_COLLECTION_COUNT = 3;
+const DEFAULT_DESKTOP_VISIBLE_COUNT = 3;
+const DEFAULT_MOBILE_VISIBLE_COUNT = 2;
+const SHARED_STRIP_NARROW_BREAKPOINT_PX = 760;
 
 function initialsForName(name: string): string {
   const words = name
@@ -35,21 +39,31 @@ function heldLabel(count?: number | null): string | null {
   return `${COUNT_FORMATTER.format(value)} held`;
 }
 
+function moreCollectionsLabel(count: number): string {
+  const collectionWord = count === 1 ? "collection" : "collections";
+  return `+${count} more shared ${collectionWord}`;
+}
+
 export function SharedCollectionsStrip({
   label,
   collections,
+  desktopVisibleCount = DEFAULT_DESKTOP_VISIBLE_COUNT,
+  mobileVisibleCount = DEFAULT_MOBILE_VISIBLE_COUNT,
 }: SharedCollectionsStripProps) {
   const [isExpanded, setIsExpanded] = useState(false);
-
   const sorted = useMemo(
     () => collections.slice().sort((a, b) => (b.heldCount ?? 0) - (a.heldCount ?? 0)),
     [collections],
   );
-  const hasMoreCollections = sorted.length > COLLAPSED_COLLECTION_COUNT;
-  const hiddenCollectionCount = Math.max(0, sorted.length - COLLAPSED_COLLECTION_COUNT);
-  const visibleCollections = isExpanded || !hasMoreCollections
-    ? sorted
-    : sorted.slice(0, COLLAPSED_COLLECTION_COUNT);
+  const desktopCount = Math.max(1, desktopVisibleCount);
+  const mobileCount = Math.max(1, mobileVisibleCount);
+  const visibleCollections = isExpanded ? sorted : sorted.slice(0, desktopCount);
+  const desktopHiddenCount = Math.max(0, sorted.length - desktopCount);
+  const mobileHiddenCount = Math.max(0, sorted.length - mobileCount);
+  const hasMoreDesktopCollections = desktopHiddenCount > 0;
+  const hasMoreMobileCollections = mobileHiddenCount > 0;
+  const desktopMoreLabel = moreCollectionsLabel(desktopHiddenCount);
+  const mobileMoreLabel = moreCollectionsLabel(mobileHiddenCount);
 
   if (collections.length === 0) return null;
 
@@ -59,25 +73,50 @@ export function SharedCollectionsStrip({
         <p className="ilj-shared-strip__label">{label}</p>
       </div>
       <div className="ilj-shared-strip__grid" aria-label={label}>
-        {visibleCollections.map((collection) => (
-          <SharedCollectionMiniCard key={collection.key} collection={collection} />
+        {visibleCollections.map((collection, index) => (
+          <SharedCollectionMiniCard
+            key={collection.key}
+            collection={collection}
+            className={!isExpanded && index >= mobileCount ? "ilj-shared-card--mobile-extra" : undefined}
+          />
         ))}
+        {isExpanded ? (
+          <button
+            type="button"
+            className="ilj-shared-strip__more-pill"
+            aria-expanded="true"
+            aria-label="Show fewer shared collections"
+            onClick={() => setIsExpanded(false)}
+          >
+            Show fewer
+          </button>
+        ) : (
+          <>
+            {hasMoreDesktopCollections && (
+              <button
+                type="button"
+                className="ilj-shared-strip__more-pill ilj-shared-strip__more-pill--desktop"
+                aria-expanded="false"
+                aria-label={`Show ${desktopMoreLabel.slice(1)}`}
+                onClick={() => setIsExpanded(true)}
+              >
+                {desktopMoreLabel}
+              </button>
+            )}
+            {hasMoreMobileCollections && (
+              <button
+                type="button"
+                className="ilj-shared-strip__more-pill ilj-shared-strip__more-pill--mobile"
+                aria-expanded="false"
+                aria-label={`Show ${mobileMoreLabel.slice(1)}`}
+                onClick={() => setIsExpanded(true)}
+              >
+                {mobileMoreLabel}
+              </button>
+            )}
+          </>
+        )}
       </div>
-      {hasMoreCollections && (
-        <button
-          type="button"
-          className="ilj-shared-strip__reveal"
-          aria-expanded={isExpanded}
-          aria-label={
-            isExpanded
-              ? "Show fewer shared collections"
-              : `Show ${hiddenCollectionCount} more shared collections`
-          }
-          onClick={() => setIsExpanded((current) => !current)}
-        >
-          {isExpanded ? "Show less" : `+ ${hiddenCollectionCount} more shared collections`}
-        </button>
-      )}
       <style>{`
         .ilj-shared-strip {
           min-width: 0;
@@ -110,24 +149,35 @@ export function SharedCollectionsStrip({
           max-width: 100%;
         }
 
-        .ilj-shared-strip__reveal {
-          justify-self: start;
+        .ilj-shared-strip__more-pill--mobile {
+          display: none;
+        }
+
+        .ilj-shared-strip__more-pill {
+          align-self: center;
+          flex: 0 0 auto;
           border: 1px solid rgba(149, 117, 255, 0.22);
           border-radius: 999px;
           padding: 5px 10px 6px;
           background: rgba(149, 117, 255, 0.075);
           color: rgba(223, 214, 255, 0.9);
-          font: inherit;
+          font-family: var(--font-geist-mono), monospace;
           font-size: 11px;
           line-height: 1.1;
+          white-space: nowrap;
           cursor: pointer;
           transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
         }
 
-        .ilj-shared-strip__reveal:hover {
+        .ilj-shared-strip__more-pill:hover {
           border-color: rgba(149, 117, 255, 0.38);
           background: rgba(149, 117, 255, 0.12);
           color: rgb(240, 237, 230);
+        }
+
+        .ilj-shared-strip__more-pill:focus-visible {
+          outline: 2px solid rgba(149, 117, 255, 0.55);
+          outline-offset: 2px;
         }
 
         .ilj-shared-card {
@@ -210,7 +260,16 @@ export function SharedCollectionsStrip({
           white-space: nowrap;
         }
 
-        @media (max-width: 520px) {
+        @media (max-width: ${SHARED_STRIP_NARROW_BREAKPOINT_PX}px) {
+          .ilj-shared-card--mobile-extra,
+          .ilj-shared-strip__more-pill--desktop {
+            display: none;
+          }
+
+          .ilj-shared-strip__more-pill--mobile {
+            display: inline-flex;
+          }
+
           .ilj-shared-strip__header {
             align-items: baseline;
           }
@@ -237,8 +296,10 @@ export function SharedCollectionsStrip({
 
 function SharedCollectionMiniCard({
   collection,
+  className,
 }: {
   collection: SharedCollectionCardItem;
+  className?: string;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
   const safeName = collection.name.trim() || "Unknown collection";
@@ -273,7 +334,7 @@ function SharedCollectionMiniCard({
         href={collection.href}
         target="_blank"
         rel="noreferrer"
-        className="ilj-shared-card"
+        className={["ilj-shared-card", className].filter(Boolean).join(" ")}
         title={countLabel ? `${safeName} · ${countLabel}` : safeName}
       >
         {content}
@@ -283,7 +344,7 @@ function SharedCollectionMiniCard({
 
   return (
     <div
-      className="ilj-shared-card"
+      className={["ilj-shared-card", className].filter(Boolean).join(" ")}
       title={countLabel ? `${safeName} · ${countLabel}` : safeName}
     >
       {content}
