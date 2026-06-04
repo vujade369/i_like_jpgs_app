@@ -212,6 +212,7 @@ export default function WalletReadPage() {
   const [similarCollectorsState, setSimilarCollectorsState] = useState<SimilarCollectorsState>("idle");
   const [hideInstitutional, setHideInstitutional] = useState(false);
   const [showAllNearbyCollectors, setShowAllNearbyCollectors] = useState(false);
+  const [showAllTopCollections, setShowAllTopCollections] = useState(false);
   const requestSeq = useRef(0);
   const didHydrateUrl = useRef(false);
 
@@ -264,6 +265,7 @@ export default function WalletReadPage() {
       }
 
       setProfile(data);
+      setShowAllTopCollections(false);
       setState(data.nftCount === 0 ? "empty" : "success");
       setErrorSources([]);
 
@@ -436,6 +438,8 @@ export default function WalletReadPage() {
   const isSimilarCollectorsLoading = similarCollectorsState === "loading";
   const showNearbyCollectorsSection =
     canFetchSimilarCollectors && (isSimilarCollectorsLoading || similarCollectors.length > 0);
+  const hiddenTopCollectionCount = Math.max(0, (profile?.topCollections.length ?? 0) - 6);
+  const hasMoreTopCollections = hiddenTopCollectionCount > 0;
 
   const hasResult = state === "success" || state === "empty";
 
@@ -599,6 +603,42 @@ export default function WalletReadPage() {
               <Panel style={supportPanelStyle}>
                 <SectionHeading title="Top collections" detail={`Top 12 of ${profile.collectionCount} visible collections`} />
                 <div style={{ display: "grid", gap: 16 }}>
+                  <style>{`
+                    .ilj-top-collections-reveal {
+                      display: none;
+                      justify-self: start;
+                      min-height: 44px;
+                      border: 1px solid rgba(149, 117, 255, 0.22);
+                      border-radius: 999px;
+                      padding: 8px 12px;
+                      background: rgba(149, 117, 255, 0.075);
+                      color: rgba(223, 214, 255, 0.9);
+                      font-family: var(--font-geist-mono), monospace;
+                      font-size: 11px;
+                      line-height: 1.1;
+                      cursor: pointer;
+                      transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+                    }
+                    .ilj-top-collections-reveal:hover {
+                      border-color: rgba(149, 117, 255, 0.38);
+                      background: rgba(149, 117, 255, 0.12);
+                      color: rgb(240, 237, 230);
+                    }
+                    .ilj-top-collections-reveal:focus-visible {
+                      outline: 2px solid rgba(149, 117, 255, 0.55);
+                      outline-offset: 2px;
+                    }
+                    @media (max-width: 760px) {
+                      .ilj-top-collection-mobile-extra--collapsed {
+                        display: none !important;
+                      }
+                      .ilj-top-collections-reveal {
+                        display: inline-flex;
+                        align-items: center;
+                        justify-content: center;
+                      }
+                    }
+                  `}</style>
                   {profile.topCollections.slice(0, 3).length > 0 && (
                     <div style={{
                       display: "grid",
@@ -667,9 +707,14 @@ export default function WalletReadPage() {
                   )}
                   {profile.topCollections.slice(3).length > 0 && (
                     <div style={collectionGridStyle}>
-                      {profile.topCollections.slice(3).map((collection) => (
+                      {profile.topCollections.slice(3).map((collection, index) => (
                         <a
                           key={collection.slug}
+                          className={
+                            !showAllTopCollections && index >= 3
+                              ? "ilj-top-collection-mobile-extra--collapsed"
+                              : undefined
+                          }
                           href={collection.openseaUrl}
                           target="_blank"
                           rel="noreferrer"
@@ -699,6 +744,23 @@ export default function WalletReadPage() {
                         </a>
                       ))}
                     </div>
+                  )}
+                  {hasMoreTopCollections && (
+                    <button
+                      type="button"
+                      className="ilj-top-collections-reveal"
+                      aria-expanded={showAllTopCollections}
+                      aria-label={
+                        showAllTopCollections
+                          ? "Show fewer top collections"
+                          : `Show ${hiddenTopCollectionCount} more top collections`
+                      }
+                      onClick={() => setShowAllTopCollections((current) => !current)}
+                    >
+                      {showAllTopCollections
+                        ? "Show fewer"
+                        : `+${hiddenTopCollectionCount} more top collections`}
+                    </button>
                   )}
                 </div>
               </Panel>
@@ -779,6 +841,9 @@ export default function WalletReadPage() {
                       padding: 16px;
                       background: #161616;
                       color: var(--jpgs-text);
+                    }
+                    .ilj-wallet-similar-card:nth-child(even) {
+                      background: #181719;
                     }
                     .ilj-wallet-similar-identity {
                       display: grid;
