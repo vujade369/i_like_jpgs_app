@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Fragment, Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
   SharedCollectionsStrip,
@@ -347,6 +347,7 @@ function ResultsInner() {
         .ilj-collector-link { transition: opacity 0.15s; }
         .ilj-collector-link:hover { opacity: 0.7; }
         .ilj-jpgs-profile-action {
+          flex: 0 0 auto;
           color: rgb(149, 117, 255);
           font-size: 11px;
           line-height: 1.2;
@@ -360,12 +361,19 @@ function ResultsInner() {
         .ilj-jpgs-profile-links {
           justify-self: start;
           display: flex;
-          flex-wrap: wrap;
+          flex-wrap: nowrap;
           align-items: center;
           gap: 5px;
+          max-width: 100%;
+          min-width: 0;
+          overflow: hidden;
           color: rgba(168,164,157,0.46);
           font-size: 11px;
           line-height: 1.2;
+          white-space: nowrap;
+        }
+        .ilj-jpgs-profile-separator {
+          flex: 0 0 auto;
         }
         .ilj-jpgs-collector-card {
           background: #161616;
@@ -477,11 +485,21 @@ function CollectorCard({ wallet, rank }: { wallet: CollectorWallet; rank: number
   const avatarSrc = avatarFailed
     ? null
     : wallet.avatarUrl || wallet.profileImageUrl || wallet.imageUrl || null;
-  const profileIdentifier = username || wallet.ens || wallet.address;
-  const openSeaUrl =
-    wallet.openSeaUrl ||
-    wallet.openseaProfileUrl ||
-    `https://opensea.io/${profileIdentifier}`;
+  const profileLinks = [
+    wallet.openSeaUrl || wallet.openseaProfileUrl
+      ? {
+          label: "OpenSea",
+          href: wallet.openSeaUrl || wallet.openseaProfileUrl,
+          ariaLabel: `View ${label} on OpenSea`,
+        }
+      : null,
+    wallet.twitterUrl
+      ? { label: "X", href: wallet.twitterUrl, ariaLabel: `View ${label} on X` }
+      : null,
+    wallet.instagramUrl
+      ? { label: "IG", href: wallet.instagramUrl, ariaLabel: `View ${label} on Instagram` }
+      : null,
+  ].filter((link): link is { label: string; href: string; ariaLabel: string } => Boolean(link));
   const initials = label.replace(/^0x/i, "").slice(0, 2).toUpperCase();
   const summary = jpgsCollectorSummary(wallet);
   const sharedCollections = sharedCollectionItems(wallet.matchedCollections);
@@ -516,45 +534,24 @@ function CollectorCard({ wallet, rank }: { wallet: CollectorWallet; rank: number
           )}
 
           <p className="ilj-jpgs-collector-summary">{summary}</p>
-          <div className="ilj-jpgs-profile-links">
-            <a
-              href={openSeaUrl}
-              target="_blank"
-              rel="noreferrer noopener"
-              className="ilj-jpgs-profile-action"
-              aria-label={`View ${label} on OpenSea`}
-            >
-              View profile -&gt;
-            </a>
-            {wallet.twitterUrl ? (
-              <>
-                <span aria-hidden="true">·</span>
-                <a
-                  href={wallet.twitterUrl}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="ilj-jpgs-profile-action"
-                  aria-label={`View ${label} on X`}
-                >
-                  X
-                </a>
-              </>
-            ) : null}
-            {wallet.instagramUrl ? (
-              <>
-                <span aria-hidden="true">·</span>
-                <a
-                  href={wallet.instagramUrl}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="ilj-jpgs-profile-action"
-                  aria-label={`View ${label} on Instagram`}
-                >
-                  Instagram
-                </a>
-              </>
-            ) : null}
-          </div>
+          {profileLinks.length > 0 ? (
+            <div className="ilj-jpgs-profile-links">
+              {profileLinks.map((link, index) => (
+                <Fragment key={link.label}>
+                  {index > 0 ? <span className="ilj-jpgs-profile-separator" aria-hidden="true">·</span> : null}
+                  <a
+                    href={link.href}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="ilj-jpgs-profile-action"
+                    aria-label={link.ariaLabel}
+                  >
+                    {link.label}
+                  </a>
+                </Fragment>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
 

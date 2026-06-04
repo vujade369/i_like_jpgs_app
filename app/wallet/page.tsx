@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, Fragment, useEffect, useRef, useState } from "react";
 import {
   SharedCollectionsStrip,
   type SharedCollectionCardItem,
@@ -114,6 +114,8 @@ type SimilarCollector = {
   imageUrl?: string | null;
   openSeaUrl?: string;
   openseaProfileUrl: string;
+  twitterUrl?: string | null;
+  instagramUrl?: string | null;
   identitySource?: string;
   matchedCollections: Array<{
     slug: string;
@@ -738,7 +740,7 @@ export default function WalletReadPage() {
                     .ilj-similar-collector-link { transition: opacity 0.15s; }
                     .ilj-similar-collector-link:hover { opacity: 0.7; }
                     .ilj-wallet-profile-action {
-                      justify-self: start;
+                      flex: 0 0 auto;
                       color: rgb(149, 117, 255);
                       font-size: 11px;
                       line-height: 1.2;
@@ -748,6 +750,23 @@ export default function WalletReadPage() {
                     }
                     .ilj-wallet-profile-action:hover {
                       opacity: 0.72;
+                    }
+                    .ilj-wallet-profile-links {
+                      justify-self: start;
+                      display: flex;
+                      flex-wrap: nowrap;
+                      align-items: center;
+                      gap: 5px;
+                      max-width: 100%;
+                      min-width: 0;
+                      overflow: hidden;
+                      color: rgba(168,164,157,0.46);
+                      font-size: 11px;
+                      line-height: 1.2;
+                      white-space: nowrap;
+                    }
+                    .ilj-wallet-profile-separator {
+                      flex: 0 0 auto;
                     }
                     .ilj-wallet-similar-card {
                       display: grid;
@@ -1582,11 +1601,21 @@ function SimilarCollectorCard({ collector, rank }: { collector: SimilarCollector
   const avatarSrc = avatarFailed
     ? null
     : collector.avatarUrl || collector.profileImageUrl || collector.imageUrl || null;
-  const profileIdentifier = collector.username || collector.ens || collector.address;
-  const openSeaUrl =
-    collector.openSeaUrl ||
-    collector.openseaProfileUrl ||
-    `https://opensea.io/${profileIdentifier}`;
+  const profileLinks = [
+    collector.openSeaUrl || collector.openseaProfileUrl
+      ? {
+          label: "OpenSea",
+          href: collector.openSeaUrl || collector.openseaProfileUrl,
+          ariaLabel: `View ${label} on OpenSea`,
+        }
+      : null,
+    collector.twitterUrl
+      ? { label: "X", href: collector.twitterUrl, ariaLabel: `View ${label} on X` }
+      : null,
+    collector.instagramUrl
+      ? { label: "IG", href: collector.instagramUrl, ariaLabel: `View ${label} on Instagram` }
+      : null,
+  ].filter((link): link is { label: string; href: string; ariaLabel: string } => Boolean(link));
   const initials = label.replace(/^0x/i, "").slice(0, 2).toUpperCase();
   const signalWord = collector.sharedCollectionCount === 1 ? "signal" : "signals";
   const proofLine = `${collector.sharedCollectionCount} shared ${signalWord} · ${formatCount(collector.totalHeldFromSelected)} held`;
@@ -1625,15 +1654,24 @@ function SimilarCollectorCard({ collector, rank }: { collector: SimilarCollector
           )}
 
           <p style={similarCollectorReasonStyle}>{proofLine}</p>
-          <a
-            href={openSeaUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="ilj-wallet-profile-action"
-            aria-label={`View ${label} on OpenSea`}
-          >
-            View profile -&gt;
-          </a>
+          {profileLinks.length > 0 ? (
+            <div className="ilj-wallet-profile-links">
+              {profileLinks.map((link, index) => (
+                <Fragment key={link.label}>
+                  {index > 0 ? <span className="ilj-wallet-profile-separator" aria-hidden="true">·</span> : null}
+                  <a
+                    href={link.href}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="ilj-wallet-profile-action"
+                    aria-label={link.ariaLabel}
+                  >
+                    {link.label}
+                  </a>
+                </Fragment>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
 
