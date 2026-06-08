@@ -96,6 +96,9 @@ export type MatchedCollection = {
   name: string;
   image_url?: string;
   heldCount: number;
+  contract?: string;
+  chain?: string;
+  contracts?: Array<{ address: string; chain?: string }>;
 };
 
 function collectionDepthScore(matchedCollections: MatchedCollection[]): number {
@@ -1170,6 +1173,9 @@ export async function discoverWalletsForCollections(
           name: col.name,
           image_url: col.image_url,
           heldCount: h.quantity,
+          contract: col.contract,
+          chain: col.chain,
+          contracts: col.contracts,
         });
       }
     }

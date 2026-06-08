@@ -11,6 +11,9 @@ export type SharedCollectionCardItem = {
   chainLabel?: string | null;
   href?: string | null;
   ownerHref?: string | null;
+  contract?: string | null;
+  chain?: string | null;
+  contracts?: Array<{ address: string; chain?: string }> | null;
 };
 
 type SharedCollectionsStripProps = {

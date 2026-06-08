@@ -120,6 +120,9 @@ type SimilarCollector = {
     name: string;
     image_url?: string;
     heldCount: number;
+    contract?: string;
+    chain?: string;
+    contracts?: Array<{ address: string; chain?: string }>;
   }>;
   sharedCollectionCount: number;
   totalHeldFromSelected: number;
@@ -199,6 +202,9 @@ function sharedCollectorCollectionItems(collections: CollectorProofCollection[],
       heldCount: collection.heldCount,
       href: safeCollectionHref(collection.slug),
       ownerHref: safeOwnerCollectionHref(collection.slug, walletAddress),
+      contract: collection.contract,
+      chain: collection.chain,
+      contracts: collection.contracts,
     };
   });
 }

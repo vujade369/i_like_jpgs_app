@@ -189,6 +189,15 @@ export function CollectionScrollRow({
     (async () => {
       try {
         const params = new URLSearchParams({ address, slug: currentSlug });
+        if (collection.contracts && collection.contracts.length > 0) {
+          for (const c of collection.contracts) {
+            if (!c.address) continue;
+            params.append("contracts", c.chain ? `${c.address}:${c.chain}` : c.address);
+          }
+        } else if (collection.contract) {
+          params.set("contract", collection.contract);
+          if (collection.chain) params.set("chain", collection.chain);
+        }
         const res = await fetch(
           `/api/wallet/collection-nfts?${params.toString()}`,
           { signal: controller.signal },

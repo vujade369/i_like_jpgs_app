@@ -21,6 +21,9 @@ type MatchedCollection = {
   name: string;
   image_url?: string;
   heldCount: number;
+  contract?: string;
+  chain?: string;
+  contracts?: Array<{ address: string; chain?: string }>;
 };
 
 type CollectorWallet = {
@@ -99,6 +102,9 @@ function sharedCollectionItems(collections: MatchedCollection[], walletAddress: 
       heldCount: collection.heldCount,
       href: safeCollectionHref(collection.slug),
       ownerHref: safeOwnerCollectionHref(collection.slug, walletAddress),
+      contract: collection.contract,
+      chain: collection.chain,
+      contracts: collection.contracts,
     };
   });
 }
