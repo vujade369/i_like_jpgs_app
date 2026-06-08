@@ -281,7 +281,6 @@ export function CollectionScrollRow({
           <NftStrip
             state={nftDisplayState}
             nfts={nftPreviews}
-            heldCount={selectedCollection.heldCount ?? 0}
           />
         )}
       </div>
@@ -551,13 +550,6 @@ export function CollectionScrollRow({
           justify-content: center;
         }
 
-        .ilj-csr__nft-tile--more {
-          flex-direction: column;
-          gap: 2px;
-          background: rgba(149, 117, 255, 0.06);
-          border-color: rgba(149, 117, 255, 0.18);
-        }
-
         .ilj-csr__nft-tile--skeleton {
           animation: ilj-csr-pulse 1.5s ease-in-out infinite;
         }
@@ -580,21 +572,6 @@ export function CollectionScrollRow({
           font-size: 9px;
           text-align: center;
           padding: 2px;
-        }
-
-        .ilj-csr__nft-more-count {
-          color: rgba(174, 148, 255, 0.9);
-          font-family: var(--font-geist-mono), monospace;
-          font-size: 11px;
-          font-weight: 500;
-          line-height: 1;
-        }
-
-        .ilj-csr__nft-more-label {
-          color: rgba(174, 148, 255, 0.5);
-          font-family: var(--font-geist-mono), monospace;
-          font-size: 8px;
-          line-height: 1;
         }
 
         .ilj-csr__nft-quiet {
@@ -627,11 +604,9 @@ export function CollectionScrollRow({
 function NftStrip({
   state,
   nfts,
-  heldCount,
 }: {
   state: NftFetchState;
   nfts: NftPreview[];
-  heldCount: number;
 }) {
   const nftScrollRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -680,9 +655,6 @@ function NftStrip({
 
   if (state !== "success" || nfts.length === 0) return null;
 
-  const moreCount = heldCount - nfts.length;
-  const showMore = moreCount > 0;
-
   return (
     <div className="ilj-csr__nft-carousel">
       <div className="ilj-csr__nft-scroll-wrap">
@@ -690,15 +662,6 @@ function NftStrip({
           {nfts.map((nft, i) => (
             <NftTile key={nft.tokenId || i} nft={nft} />
           ))}
-          {showMore && (
-            <div
-              className="ilj-csr__nft-tile ilj-csr__nft-tile--more"
-              aria-label={`${moreCount} more`}
-            >
-              <span className="ilj-csr__nft-more-count">+{COUNT_FORMATTER.format(moreCount)}</span>
-              <span className="ilj-csr__nft-more-label">more</span>
-            </div>
-          )}
         </div>
       </div>
 

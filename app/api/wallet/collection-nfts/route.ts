@@ -5,8 +5,8 @@ const OPENSEA_BASE = "https://api.opensea.io/api/v2";
 // Chains searched in order. ethereum first because that's where most relevant NFTs live.
 const PREVIEW_CHAINS = ["ethereum", "base", "polygon", "arbitrum", "optimism", "zora"] as const;
 
-// Return at most this many previews. Enough to show 8 tiles + a "+N more" tile.
-const MAX_PREVIEWS = 12;
+// Safety cap: return at most this many NFTs for a selected collection.
+const MAX_PREVIEWS = 100;
 
 const CONTRACT_RE = /^0x[0-9a-f]{10,}$/i;
 
@@ -33,6 +33,7 @@ type OsAccountNft = {
 
 type OsAccountNftsResponse = {
   nfts?: OsAccountNft[];
+  next?: string | null;
 };
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
@@ -59,44 +60,51 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       break;
     }
 
-    const params = new URLSearchParams({
-      collection: slug,
-      limit: "50",
-      include_hidden: "false",
-    });
+    let cursor: string | null = null;
 
-    try {
-      const res = await fetch(
-        `${OPENSEA_BASE}/chain/${chain}/account/${encodeURIComponent(address)}/nfts?${params.toString()}`,
-        {
-          cache: "no-store",
-          headers: { "X-API-KEY": key, Accept: "application/json" },
-          signal: AbortSignal.timeout(8_000),
-        },
-      );
+    do {
+      const params = new URLSearchParams({
+        collection: slug,
+        limit: "50",
+        include_hidden: "false",
+      });
+      if (cursor) params.set("next", cursor);
 
-      if (!res.ok) {
-        // Rate-limited: stop searching further chains.
-        if (res.status === 429) { partial = true; break; }
-        // Any other error: skip this chain silently.
-        continue;
+      try {
+        const res = await fetch(
+          `${OPENSEA_BASE}/chain/${chain}/account/${encodeURIComponent(address)}/nfts?${params.toString()}`,
+          {
+            cache: "no-store",
+            headers: { "X-API-KEY": key, Accept: "application/json" },
+            signal: AbortSignal.timeout(8_000),
+          },
+        );
+
+        if (!res.ok) {
+          // Rate-limited: stop searching further chains.
+          if (res.status === 429) { partial = true; cursor = null; break; }
+          // Any other error: skip this chain.
+          cursor = null; break;
+        }
+
+        const data = (await res.json()) as OsAccountNftsResponse;
+
+        for (const nft of data.nfts ?? []) {
+          if (nfts.length >= MAX_PREVIEWS) { partial = true; break; }
+          nfts.push({
+            tokenId: nft.identifier ?? "",
+            name: nft.name ?? null,
+            imageUrl: nft.display_image_url ?? nft.image_url ?? null,
+            openseaUrl: nft.opensea_url ?? null,
+          });
+        }
+
+        cursor = nfts.length < MAX_PREVIEWS ? (data.next ?? null) : null;
+      } catch {
+        // Timeout or network error — stop paginating this chain.
+        cursor = null;
       }
-
-      const data = (await res.json()) as OsAccountNftsResponse;
-
-      for (const nft of data.nfts ?? []) {
-        if (nfts.length >= MAX_PREVIEWS) { partial = true; break; }
-        nfts.push({
-          tokenId: nft.identifier ?? "",
-          name: nft.name ?? null,
-          imageUrl: nft.display_image_url ?? nft.image_url ?? null,
-          openseaUrl: nft.opensea_url ?? null,
-        });
-      }
-    } catch {
-      // Timeout or network error — skip this chain.
-      continue;
-    }
+    } while (cursor);
   }
 
   return NextResponse.json({ nfts, partial });
