@@ -1,10 +1,8 @@
 "use client";
 
 import { FormEvent, Fragment, useEffect, useRef, useState } from "react";
-import {
-  SharedCollectionsStrip,
-  type SharedCollectionCardItem,
-} from "@/components/collectors/SharedCollectionsStrip";
+import { type SharedCollectionCardItem } from "@/components/collectors/SharedCollectionsStrip";
+import { CollectionScrollRow } from "@/components/collectors/CollectionScrollRow";
 import { WalletSearchInput, walletSuggestionValue, type WalletSuggestion } from "@/components/WalletSearchInput";
 
 type TopCollection = {
@@ -138,7 +136,7 @@ type CollectorProofCollection = SimilarCollector["matchedCollections"][number];
 
 const MAX_WALLETS = 2;
 const SHOW_TOP_ARTISTS = false;
-const SIMILAR_COLLECTOR_COLLECTION_LIMIT = 15;
+const SIMILAR_COLLECTOR_COLLECTION_LIMIT = 25;
 const SIMILAR_COLLECTOR_COLLAPSED_DISPLAY_LIMIT = 5;
 const SIMILAR_COLLECTOR_EXPANDED_DISPLAY_LIMIT = 10;
 const MIN_SIMILAR_COLLECTOR_SHARED_COLLECTIONS = 2;
@@ -184,17 +182,29 @@ function safeCollectionHref(slug?: string | null): string | null {
   return `https://opensea.io/collection/${encodeURIComponent(trimmed)}`;
 }
 
-function sharedCollectorCollectionItems(collections: CollectorProofCollection[]): SharedCollectionCardItem[] {
+function safeOwnerCollectionHref(slug: string | undefined, address: string): string | null {
+  const trimmed = slug?.trim();
+  if (!trimmed || !address || isRawContractIdentifier(trimmed)) return null;
+  return `https://opensea.io/${address}?tab=collected&search[collections][0]=${encodeURIComponent(trimmed)}`;
+}
+
+function sharedCollectorCollectionItems(collections: CollectorProofCollection[], walletAddress: string): SharedCollectionCardItem[] {
   return collections.map((collection) => {
     const name = collectionProofLabel(collection);
     return {
       key: collection.slug || collection.name || name,
+      slug: collection.slug || null,
       name,
       imageUrl: collection.image_url,
       heldCount: collection.heldCount,
       href: safeCollectionHref(collection.slug),
+      ownerHref: safeOwnerCollectionHref(collection.slug, walletAddress),
     };
   });
+}
+
+function orderedSharedCollectionItems(collections: SharedCollectionCardItem[]): SharedCollectionCardItem[] {
+  return collections.slice().sort((a, b) => (b.heldCount ?? 0) - (a.heldCount ?? 0));
 }
 
 export default function WalletReadPage() {
@@ -796,91 +806,154 @@ export default function WalletReadPage() {
                 <Panel style={supportPanelStyle}>
                   <SectionHeading
                     title="Collectors nearby"
-                    detail="Looking across this wallet's top 15 visible collections to find collectors with nearby taste. Ranked by shared collection count first, then weighted by how deeply each collector holds those shared collections."
+                    detail="Looking across this wallet's top 25 visible collections to find collectors with nearby taste. Ranked by shared collection count first, then weighted by how deeply each collector holds those shared collections."
                   />
                   <style>{`
                     .ilj-similar-collector-link { transition: opacity 0.15s; }
                     .ilj-similar-collector-link:hover { opacity: 0.7; }
                     .ilj-wallet-profile-action {
-                      flex: 0 0 auto;
-                      color: rgb(149, 117, 255);
+                      display: inline-flex;
+                      align-items: center;
+                      gap: 5px;
+                      color: rgba(174, 148, 255, 0.76);
                       font-size: 11px;
                       line-height: 1.2;
                       text-decoration: none;
-                      opacity: 0.9;
+                      opacity: 0.82;
                       transition: opacity 0.15s ease, color 0.15s ease;
                     }
                     .ilj-wallet-profile-action:hover {
-                      opacity: 0.72;
+                      color: rgba(196, 178, 255, 0.9);
+                      opacity: 0.86;
                     }
                     .ilj-wallet-profile-links {
-                      justify-self: start;
                       display: flex;
                       flex-wrap: nowrap;
                       align-items: center;
+                      justify-content: flex-start;
                       gap: 5px;
                       max-width: 100%;
                       min-width: 0;
                       overflow: hidden;
-                      color: rgba(168,164,157,0.46);
-                      font-size: 11px;
+                      color: rgba(168,164,157,0.36);
+                      font-size: 10px;
                       line-height: 1.2;
+                      margin-top: auto;
                       white-space: nowrap;
                     }
                     .ilj-wallet-profile-separator {
                       flex: 0 0 auto;
                     }
                     .ilj-wallet-similar-card {
-                      display: grid;
-                      grid-template-columns: 210px minmax(0, 1fr);
-                      gap: 16px;
-                      align-items: stretch;
+                      display: flex;
+                      flex-direction: column;
+                      gap: 0;
                       min-width: 0;
                       border: 1px solid rgba(255,255,255,0.07);
                       border-radius: 14px;
-                      padding: 16px;
-                      background: #161616;
+                      padding: 18px;
+                      background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.024)), #141516;
                       color: var(--jpgs-text);
+                      box-shadow: inset 0 1px 0 rgba(255,255,255,0.035), 0 14px 34px rgba(0,0,0,0.16);
+                    }
+                    .ilj-wallet-similar-card:first-child {
+                      border-color: rgba(149,117,255,0.24);
+                      box-shadow: inset 0 1px 0 rgba(255,255,255,0.045), 0 0 0 1px rgba(149,117,255,0.055), 0 18px 38px rgba(0,0,0,0.2);
                     }
                     .ilj-wallet-similar-card:nth-child(even) {
-                      background: #181719;
+                      background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.022)), #171719;
+                    }
+                    .ilj-wallet-similar-header {
+                      display: flex;
+                      align-items: flex-start;
+                      justify-content: space-between;
+                      gap: 12px;
+                      padding-bottom: 16px;
+                      margin-bottom: 14px;
+                      border-bottom: 1px solid rgba(255,255,255,0.07);
                     }
                     .ilj-wallet-similar-identity {
-                      display: grid;
-                      grid-template-columns: 56px minmax(0, 1fr);
+                      display: flex;
+                      flex-direction: row;
+                      align-items: center;
                       gap: 12px;
-                      align-content: start;
                       min-width: 0;
-                      padding-right: 16px;
-                      border-right: 1px solid rgba(255,255,255,0.07);
+                      flex: 1;
+                    }
+                    .ilj-wallet-similar-avatar-wrap {
+                      width: 44px;
+                      height: 44px;
+                      border-radius: 50%;
+                      flex-shrink: 0;
+                      box-sizing: border-box;
+                      border: 1px solid rgba(214,204,255,0.24);
+                      background: rgba(149,117,255,0.15);
+                      overflow: hidden;
+                    }
+                    .ilj-wallet-similar-avatar-wrap img {
+                      width: 100%;
+                      height: 100%;
+                      object-fit: cover;
+                      display: block;
+                      border-radius: 50%;
+                    }
+                    .ilj-wallet-similar-rank {
+                      flex-shrink: 0;
+                      border: 1px solid rgba(149,117,255,0.36);
+                      border-radius: 7px;
+                      padding: 4px 8px;
+                      background: rgba(149,117,255,0.18);
+                      color: rgba(225,217,255,0.92);
+                      font-size: 12px;
+                      line-height: 1.2;
+                      font-family: var(--font-geist-mono), monospace;
+                      font-weight: 600;
+                      white-space: nowrap;
                     }
                     .ilj-wallet-similar-copy {
                       min-width: 0;
                       display: grid;
                       gap: 5px;
-                      align-content: start;
+                      align-content: center;
+                      flex: 1;
                     }
-                    .ilj-wallet-similar-name-row {
+                    .ilj-wallet-similar-count-block {
+                      flex-shrink: 0;
                       display: flex;
-                      align-items: center;
-                      justify-content: space-between;
-                      gap: 8px;
-                      min-width: 0;
+                      flex-direction: column;
+                      align-items: flex-end;
+                      gap: 3px;
                     }
-                    .ilj-wallet-similar-rank {
-                      flex: 0 0 auto;
-                      border: 1px solid rgba(149,117,255,0.22);
-                      border-radius: 999px;
-                      padding: 2px 6px;
-                      background: rgba(149,117,255,0.10);
-                      color: rgba(214,204,255,0.82);
-                      font-size: 10px;
-                      line-height: 1;
+                    .ilj-wallet-similar-count {
+                      color: rgb(170,126,255);
                       font-family: var(--font-geist-mono), monospace;
+                      font-size: 44px;
+                      font-weight: 750;
+                      line-height: 0.9;
+                      letter-spacing: -1px;
+                      text-shadow: 0 0 14px rgba(149,117,255,0.18);
+                      font-variant-numeric: tabular-nums;
                     }
-                    .ilj-wallet-similar-proof {
-                      min-width: 0;
-                      align-self: center;
+                    .ilj-wallet-similar-count-label {
+                      color: rgba(168,164,157,0.62);
+                      font-family: var(--font-geist-mono), monospace;
+                      font-size: 9px;
+                      line-height: 1.2;
+                      letter-spacing: 0.14em;
+                      text-transform: uppercase;
+                    }
+                    @media (max-width: 760px) {
+                      .ilj-wallet-similar-card {
+                        padding: 14px;
+                      }
+                      .ilj-wallet-similar-count {
+                        font-size: 36px;
+                      }
+                    }
+                    @media (max-width: 460px) {
+                      .ilj-wallet-similar-card {
+                        padding: 12px;
+                      }
                     }
                     .ilj-wallet-similar-loading {
                       display: grid;
@@ -904,19 +977,6 @@ export default function WalletReadPage() {
                     @keyframes iljWalletSimilarLoading {
                       0% { background-position: 100% 0; }
                       100% { background-position: -100% 0; }
-                    }
-                    @media (max-width: 760px) {
-                      .ilj-wallet-similar-card {
-                        grid-template-columns: minmax(0, 1fr);
-                        gap: 14px;
-                        padding: 15px;
-                      }
-                      .ilj-wallet-similar-identity {
-                        border-right: 0;
-                        border-bottom: 1px solid rgba(255,255,255,0.07);
-                        padding-right: 0;
-                        padding-bottom: 14px;
-                      }
                     }
                   `}</style>
                   {isSimilarCollectorsLoading ? (
@@ -1682,70 +1742,62 @@ function SimilarCollectorCard({ collector, rank }: { collector: SimilarCollector
       : null,
   ].filter((link): link is { label: string; href: string; ariaLabel: string } => Boolean(link));
   const initials = label.replace(/^0x/i, "").slice(0, 2).toUpperCase();
-  const signalWord = collector.sharedCollectionCount === 1 ? "signal" : "signals";
-  const proofLine = `${collector.sharedCollectionCount} shared ${signalWord} · ${formatCount(collector.totalHeldFromSelected)} held`;
-  const sharedCollections = sharedCollectorCollectionItems(collector.matchedCollections);
+  const sharedCollections = sharedCollectorCollectionItems(collector.matchedCollections, collector.address);
+  const orderedSharedCollections = orderedSharedCollectionItems(sharedCollections);
 
   return (
     <article className="ilj-wallet-similar-card">
-      <div className="ilj-wallet-similar-identity">
-        <div style={similarCollectorAvatarLinkStyle} aria-hidden="true">
-          {avatarSrc ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={avatarSrc}
-              alt=""
-              loading="lazy"
-              onError={() => setAvatarFailed(true)}
-              style={similarCollectorAvatarStyle}
-            />
-          ) : (
-            <span style={similarCollectorAvatarFallbackStyle} aria-hidden="true">
-              {initials}
-            </span>
-          )}
-        </div>
-
-        <div className="ilj-wallet-similar-copy">
-          <div className="ilj-wallet-similar-name-row">
-            <span style={similarCollectorNameStyle}>
-              {label}
-            </span>
-            <span className="ilj-wallet-similar-rank">#{rank}</span>
+      <div className="ilj-wallet-similar-header">
+        <div className="ilj-wallet-similar-identity">
+          <span className="ilj-wallet-similar-rank">#{rank}</span>
+          <div className="ilj-wallet-similar-avatar-wrap" aria-hidden="true">
+            {avatarSrc ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={avatarSrc}
+                alt=""
+                loading="lazy"
+                onError={() => setAvatarFailed(true)}
+                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+              />
+            ) : (
+              <span style={similarCollectorAvatarFallbackStyle} aria-hidden="true">
+                {initials}
+              </span>
+            )}
           </div>
-
-          {secondaryIdentity && (
-            <p style={similarCollectorIdentityStyle}>{secondaryIdentity}</p>
-          )}
-
-          <p style={similarCollectorReasonStyle}>{proofLine}</p>
-          {profileLinks.length > 0 ? (
-            <div className="ilj-wallet-profile-links">
-              {profileLinks.map((link, index) => (
-                <Fragment key={link.label}>
-                  {index > 0 ? <span className="ilj-wallet-profile-separator" aria-hidden="true">·</span> : null}
-                  <a
-                    href={link.href}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    className="ilj-wallet-profile-action"
-                    aria-label={link.ariaLabel}
-                  >
-                    {link.label}
-                  </a>
-                </Fragment>
-              ))}
-            </div>
-          ) : null}
+          <div className="ilj-wallet-similar-copy">
+            <span style={similarCollectorNameStyle}>{label}</span>
+            {secondaryIdentity && (
+              <p style={similarCollectorIdentityStyle}>{secondaryIdentity}</p>
+            )}
+            {profileLinks.length > 0 ? (
+              <div className="ilj-wallet-profile-links">
+                {profileLinks.map((link, index) => (
+                  <Fragment key={link.label}>
+                    {index > 0 ? <span className="ilj-wallet-profile-separator" aria-hidden="true">·</span> : null}
+                    <a
+                      href={link.href}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="ilj-wallet-profile-action"
+                      aria-label={link.ariaLabel}
+                    >
+                      {link.label}
+                      {link.label === "OpenSea" ? <span aria-hidden="true">↗</span> : null}
+                    </a>
+                  </Fragment>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </div>
+        <div className="ilj-wallet-similar-count-block">
+          <span className="ilj-wallet-similar-count">{collector.sharedCollectionCount}</span>
+          <span className="ilj-wallet-similar-count-label">SHARED</span>
         </div>
       </div>
-
-      <div className="ilj-wallet-similar-proof">
-        <SharedCollectionsStrip
-          label="SHARED COLLECTIONS"
-          collections={sharedCollections}
-        />
-      </div>
+      <CollectionScrollRow collections={orderedSharedCollections} collectorAddress={collector.address} />
     </article>
   );
 }
@@ -2055,24 +2107,6 @@ const nearbyCollectorsLoadingBodyStyle: React.CSSProperties = {
   maxWidth: 520,
 };
 
-const similarCollectorAvatarLinkStyle: React.CSSProperties = {
-  flexShrink: 0,
-  width: 56,
-  height: 56,
-  borderRadius: "50%",
-  overflow: "hidden",
-  textDecoration: "none",
-  background: "rgba(149,117,255,0.15)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-};
-
-const similarCollectorAvatarStyle: React.CSSProperties = {
-  width: "100%",
-  height: "100%",
-  objectFit: "cover",
-};
 
 const similarCollectorAvatarFallbackStyle: React.CSSProperties = {
   width: "100%",
@@ -2080,40 +2114,35 @@ const similarCollectorAvatarFallbackStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
+  borderRadius: "50%",
+  overflow: "hidden",
   color: "rgb(149,117,255)",
-  fontSize: 14,
+  fontSize: 16,
   fontWeight: 500,
 };
 
 const similarCollectorNameStyle: React.CSSProperties = {
-  display: "block",
-  fontSize: 14,
-  fontWeight: 500,
-  lineHeight: 1.35,
+  display: "-webkit-box",
+  fontSize: 15,
+  fontWeight: 650,
+  lineHeight: 1.25,
   color: "rgb(240,237,230)",
+  WebkitLineClamp: 1,
+  WebkitBoxOrient: "vertical",
   overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
+  overflowWrap: "anywhere",
   textDecoration: "none",
   minWidth: 0,
 };
 
 const similarCollectorIdentityStyle: React.CSSProperties = {
-  color: "rgba(168,164,157,0.62)",
-  fontSize: 11,
-  lineHeight: 1.45,
-  marginTop: 2,
-  marginBottom: 10,
+  color: "rgba(168,164,157,0.42)",
+  fontSize: 10,
+  lineHeight: 1.35,
+  margin: 0,
   overflow: "hidden",
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
-};
-
-const similarCollectorReasonStyle: React.CSSProperties = {
-  color: "var(--jpgs-muted)",
-  fontSize: 12,
-  lineHeight: 1.45,
-  marginTop: 4,
 };
 
 const sectionHeadingStyle: React.CSSProperties = {

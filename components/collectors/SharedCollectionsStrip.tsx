@@ -4,11 +4,13 @@ import { useMemo, useState } from "react";
 
 export type SharedCollectionCardItem = {
   key: string;
+  slug?: string | null;
   name: string;
   imageUrl?: string | null;
   heldCount?: number | null;
   chainLabel?: string | null;
   href?: string | null;
+  ownerHref?: string | null;
 };
 
 type SharedCollectionsStripProps = {
@@ -16,6 +18,7 @@ type SharedCollectionsStripProps = {
   collections: SharedCollectionCardItem[];
   desktopVisibleCount?: number;
   mobileVisibleCount?: number;
+  variant?: "compact" | "ranked-card";
 };
 
 const COUNT_FORMATTER = new Intl.NumberFormat("en-US");
@@ -49,6 +52,7 @@ export function SharedCollectionsStrip({
   collections,
   desktopVisibleCount = DEFAULT_DESKTOP_VISIBLE_COUNT,
   mobileVisibleCount = DEFAULT_MOBILE_VISIBLE_COUNT,
+  variant = "compact",
 }: SharedCollectionsStripProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const sorted = useMemo(
@@ -68,7 +72,7 @@ export function SharedCollectionsStrip({
   if (collections.length === 0) return null;
 
   return (
-    <div className="ilj-shared-strip">
+    <div className={`ilj-shared-strip ilj-shared-strip--${variant}`}>
       <div className="ilj-shared-strip__header">
         <p className="ilj-shared-strip__label">{label}</p>
       </div>
@@ -147,6 +151,7 @@ export function SharedCollectionsStrip({
           gap: 9px;
           min-width: 0;
           max-width: 100%;
+          align-items: stretch;
         }
 
         .ilj-shared-strip__more-pill--mobile {
@@ -184,6 +189,7 @@ export function SharedCollectionsStrip({
           width: 180px;
           min-height: 86px;
           flex: 0 0 180px;
+          min-width: 0;
           box-sizing: border-box;
           display: grid;
           grid-template-columns: 56px minmax(0, 1fr);
@@ -204,22 +210,38 @@ export function SharedCollectionsStrip({
           transform: translateY(-1px);
         }
 
-        .ilj-shared-card__image,
-        .ilj-shared-card__fallback {
+        .ilj-shared-card__media-link,
+        .ilj-shared-card__media {
+          display: block;
           width: 56px;
           height: 56px;
           border-radius: 6px;
           border: 1px solid rgba(255, 255, 255, 0.11);
+          overflow: hidden;
           background: rgba(149, 117, 255, 0.13);
           flex: 0 0 auto;
         }
 
+        .ilj-shared-card__media-link:focus-visible {
+          outline: 2px solid rgba(149, 117, 255, 0.55);
+          outline-offset: -2px;
+        }
+
         .ilj-shared-card__image {
+          width: 100%;
+          height: 100%;
           object-fit: cover;
           display: block;
+          transition: opacity 0.15s ease;
+        }
+
+        .ilj-shared-card__media-link:hover .ilj-shared-card__image {
+          opacity: 0.88;
         }
 
         .ilj-shared-card__fallback {
+          width: 100%;
+          height: 100%;
           display: grid;
           place-items: center;
           color: rgb(149, 117, 255);
@@ -260,6 +282,98 @@ export function SharedCollectionsStrip({
           white-space: nowrap;
         }
 
+        .ilj-shared-card__action {
+          display: none;
+        }
+
+        .ilj-shared-strip--ranked-card .ilj-shared-strip__header {
+          display: none;
+        }
+
+        .ilj-shared-strip--ranked-card .ilj-shared-strip__grid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 10px;
+        }
+
+        .ilj-shared-strip--ranked-card .ilj-shared-card {
+          width: auto;
+          min-height: 0;
+          flex: initial;
+          max-width: none;
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          align-items: stretch;
+          gap: 0;
+          border-radius: 8px;
+          padding: 0;
+          overflow: hidden;
+          background: linear-gradient(180deg, rgba(255, 255, 255, 0.052), rgba(255, 255, 255, 0.026));
+        }
+
+        .ilj-shared-strip--ranked-card .ilj-shared-card__media-link,
+        .ilj-shared-strip--ranked-card .ilj-shared-card__media {
+          width: 100%;
+          height: auto;
+          aspect-ratio: 1.08;
+          border: 0;
+          border-radius: 0;
+          background: rgba(149, 117, 255, 0.10);
+        }
+
+        .ilj-shared-strip--ranked-card .ilj-shared-card__fallback {
+          font-size: 18px;
+          font-weight: 500;
+        }
+
+        .ilj-shared-strip--ranked-card .ilj-shared-card__body {
+          min-height: 116px;
+          padding: 10px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          flex: 1;
+        }
+
+        .ilj-shared-strip--ranked-card .ilj-shared-card__name {
+          line-height: 1.25;
+          min-height: calc(2 * 1.25em);
+        }
+
+        .ilj-shared-strip--ranked-card .ilj-shared-card__held {
+          align-self: flex-start;
+          justify-self: auto;
+        }
+
+        .ilj-shared-strip--ranked-card .ilj-shared-card__action {
+          margin-top: auto;
+          padding-top: 4px;
+          display: inline-flex;
+          align-items: center;
+          font-size: 10px;
+          line-height: 1.2;
+          color: rgba(149, 117, 255, 0.82);
+          text-decoration: none;
+          font-family: var(--font-geist-mono), monospace;
+          white-space: nowrap;
+          transition: color 0.15s ease;
+        }
+
+        .ilj-shared-card__action:hover {
+          color: rgb(149, 117, 255);
+        }
+
+        .ilj-shared-card__action:focus-visible {
+          outline: 2px solid rgba(149, 117, 255, 0.55);
+          outline-offset: 2px;
+          border-radius: 2px;
+        }
+
+        .ilj-shared-strip--ranked-card .ilj-shared-strip__more-pill {
+          justify-self: start;
+        }
+
         @media (max-width: ${SHARED_STRIP_NARROW_BREAKPOINT_PX}px) {
           .ilj-shared-card--mobile-extra,
           .ilj-shared-strip__more-pill--desktop {
@@ -283,10 +397,39 @@ export function SharedCollectionsStrip({
             padding: 8px;
           }
 
-          .ilj-shared-card__image,
-          .ilj-shared-card__fallback {
+          .ilj-shared-card__media-link,
+          .ilj-shared-card__media {
             width: 48px;
             height: 48px;
+          }
+
+          .ilj-shared-strip--ranked-card .ilj-shared-strip__grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .ilj-shared-strip--ranked-card .ilj-shared-card {
+            width: auto;
+            min-height: 0;
+            flex-basis: auto;
+            display: flex;
+            gap: 0;
+            padding: 0;
+          }
+
+          .ilj-shared-strip--ranked-card .ilj-shared-card__media-link,
+          .ilj-shared-strip--ranked-card .ilj-shared-card__media {
+            width: 100%;
+            height: auto;
+          }
+
+          .ilj-shared-strip--ranked-card .ilj-shared-card__body {
+            min-height: 112px;
+          }
+        }
+
+        @media (max-width: 460px) {
+          .ilj-shared-strip--ranked-card .ilj-shared-strip__grid {
+            grid-template-columns: minmax(0, 1fr);
           }
         }
       `}</style>
@@ -305,49 +448,58 @@ function SharedCollectionMiniCard({
   const safeName = collection.name.trim() || "Unknown collection";
   const imageUrl = imageFailed ? null : collection.imageUrl;
   const countLabel = heldLabel(collection.heldCount);
-  const content = (
-    <>
-      {imageUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={imageUrl}
-          alt=""
-          loading="lazy"
-          onError={() => setImageFailed(true)}
-          className="ilj-shared-card__image"
-        />
-      ) : (
-        <span className="ilj-shared-card__fallback" aria-hidden="true">
-          {initialsForName(safeName)}
-        </span>
-      )}
-      <div className="ilj-shared-card__body">
-        <p className="ilj-shared-card__name">{safeName}</p>
-        {countLabel && <span className="ilj-shared-card__held">{countLabel}</span>}
-      </div>
-    </>
+
+  const imageEl = imageUrl ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={imageUrl}
+      alt=""
+      loading="lazy"
+      onError={() => setImageFailed(true)}
+      className="ilj-shared-card__image"
+    />
+  ) : (
+    <span className="ilj-shared-card__fallback" aria-hidden="true">
+      {initialsForName(safeName)}
+    </span>
   );
 
-  if (collection.href) {
-    return (
-      <a
-        href={collection.href}
-        target="_blank"
-        rel="noreferrer"
-        className={["ilj-shared-card", className].filter(Boolean).join(" ")}
-        title={countLabel ? `${safeName} · ${countLabel}` : safeName}
-      >
-        {content}
-      </a>
-    );
-  }
+  const mediaArea = collection.href ? (
+    <a
+      href={collection.href}
+      target="_blank"
+      rel="noreferrer"
+      className="ilj-shared-card__media-link"
+      aria-label={safeName}
+      tabIndex={0}
+    >
+      {imageEl}
+    </a>
+  ) : (
+    <div className="ilj-shared-card__media">{imageEl}</div>
+  );
 
   return (
     <div
       className={["ilj-shared-card", className].filter(Boolean).join(" ")}
       title={countLabel ? `${safeName} · ${countLabel}` : safeName}
     >
-      {content}
+      {mediaArea}
+      <div className="ilj-shared-card__body">
+        <p className="ilj-shared-card__name">{safeName}</p>
+        {countLabel && <span className="ilj-shared-card__held">{countLabel}</span>}
+        {collection.ownerHref && (
+          <a
+            href={collection.ownerHref}
+            target="_blank"
+            rel="noreferrer"
+            className="ilj-shared-card__action"
+            aria-label={`See owned JPGs from ${safeName}`}
+          >
+            See owned JPGs →
+          </a>
+        )}
+      </div>
     </div>
   );
 }

@@ -11,7 +11,7 @@ import {
 
 export const maxDuration = 300;
 
-const MAX_COLLECTIONS = 15;
+const MAX_SIMILAR_COLLECTOR_COLLECTIONS = 25;
 const MAX_DISCOVERED_COLLECTORS = 20;
 const MAX_RETURNED_COLLECTORS = 10;
 const MIN_SHARED_COLLECTIONS = 2;
@@ -70,7 +70,7 @@ function collectionRefsFromBody(body: SimilarCollectorsBody): CollectionRef[] {
         .filter((contract) => contract.address),
     });
 
-    if (refs.length >= MAX_COLLECTIONS) break;
+    if (refs.length >= MAX_SIMILAR_COLLECTOR_COLLECTIONS) break;
   }
 
   return refs;
@@ -104,7 +104,7 @@ export async function POST(req: NextRequest) {
 
   const discoveryStartedAt = nowMs();
   const discovery = await discoverWalletsForCollections(collections, {
-    maxCollections: MAX_COLLECTIONS,
+    maxCollections: MAX_SIMILAR_COLLECTOR_COLLECTIONS,
   }).catch(() => null);
   const holderDiscoveryMs = nowMs() - discoveryStartedAt;
 
@@ -231,7 +231,7 @@ export async function POST(req: NextRequest) {
           debug: {
             collectionsAttempted: collections.length,
             collectionsReceived,
-            maxCollections: MAX_COLLECTIONS,
+            maxCollections: MAX_SIMILAR_COLLECTOR_COLLECTIONS,
             maxReturnedCollectors: MAX_RETURNED_COLLECTORS,
             timings,
             collectionsWithUsableHolders: collectionsWithUsableHolders.length,

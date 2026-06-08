@@ -2,10 +2,8 @@
 
 import { Fragment, Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import {
-  SharedCollectionsStrip,
-  type SharedCollectionCardItem,
-} from "@/components/collectors/SharedCollectionsStrip";
+import { type SharedCollectionCardItem } from "@/components/collectors/SharedCollectionsStrip";
+import { CollectionScrollRow } from "@/components/collectors/CollectionScrollRow";
 import { SelectedCollectionEditor } from "@/components/jpgs/SelectedCollectionEditor";
 import type { OsCollection } from "@/components/jpgs/CollectionSearchInput";
 import { MAX_SELECTED_COLLECTIONS } from "@/lib/jpgs/limits";
@@ -84,27 +82,31 @@ function safeCollectionHref(slug?: string | null): string | null {
   return `https://opensea.io/collection/${encodeURIComponent(trimmed)}`;
 }
 
-function sharedCollectionItems(collections: MatchedCollection[]): SharedCollectionCardItem[] {
+function safeOwnerCollectionHref(slug: string | undefined, address: string): string | null {
+  const trimmed = slug?.trim();
+  if (!trimmed || !address || isRawContractIdentifier(trimmed)) return null;
+  return `https://opensea.io/${address}?tab=collected&search[collections][0]=${encodeURIComponent(trimmed)}`;
+}
+
+function sharedCollectionItems(collections: MatchedCollection[], walletAddress: string): SharedCollectionCardItem[] {
   return collections.map((collection) => {
     const name = collectionProofLabel(collection);
     return {
       key: collection.slug || collection.name || name,
+      slug: collection.slug || null,
       name,
       imageUrl: collection.image_url,
       heldCount: collection.heldCount,
       href: safeCollectionHref(collection.slug),
+      ownerHref: safeOwnerCollectionHref(collection.slug, walletAddress),
     };
   });
 }
 
-function jpgsCollectorSummary(wallet: CollectorWallet): string {
-  const collectionCount = wallet.matchedCollectionCount;
-  const heldCount = wallet.totalHeldFromSelected;
-  const collectionWord = collectionCount === 1 ? "collection" : "collections";
-
-  if (heldCount > 0) return `${collectionCount} ${collectionWord} · ${heldCount} held`;
-  return `Matches ${collectionCount} selected ${collectionWord}`;
+function orderedSharedCollectionItems(collections: SharedCollectionCardItem[]): SharedCollectionCardItem[] {
+  return collections.slice().sort((a, b) => (b.heldCount ?? 0) - (a.heldCount ?? 0));
 }
+
 
 function ResultsInner() {
   const params = useSearchParams();
@@ -244,12 +246,19 @@ function ResultsInner() {
 
   return (
     <>
-      <section style={{ maxWidth: 760, margin: "0 auto", padding: "72px 24px 40px" }}>
-        <h1 style={{ fontSize: 28, fontWeight: 300, letterSpacing: "-0.02em", marginBottom: 10 }}>
-          Collectors near this taste
-        </h1>
+      <section style={{ maxWidth: 1180, margin: "0 auto", padding: "72px 24px 34px" }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
+          <h1 style={{ fontSize: 28, fontWeight: 650, letterSpacing: "0", margin: 0, lineHeight: 1.15 }}>
+            Top Collector Matches
+          </h1>
+          {!loading && !noCollections && !error ? (
+            <span className="ilj-jpgs-results-count-pill">
+              {wallets.length} {wallets.length === 1 ? "result" : "results"}
+            </span>
+          ) : null}
+        </div>
         <p style={{ color: "rgb(168,164,157)", fontSize: 14, marginBottom: 24 }}>
-          Wallets with visible overlap across your selected collections.
+          Collectors ranked by collection overlap
         </p>
 
         {collections.length > 0 && (
@@ -262,7 +271,7 @@ function ResultsInner() {
         )}
       </section>
 
-      <section style={{ maxWidth: 980, margin: "0 auto", padding: "0 24px 80px", overflowX: "clip" }}>
+      <section style={{ maxWidth: 1180, margin: "0 auto", padding: "0 24px 80px", overflowX: "clip" }}>
         {loading && (
           <div style={{
             background: "#161616",
@@ -346,132 +355,180 @@ function ResultsInner() {
         @keyframes spin { to { transform: rotate(360deg); } }
         .ilj-collector-link { transition: opacity 0.15s; }
         .ilj-collector-link:hover { opacity: 0.7; }
+        .ilj-jpgs-results-count-pill {
+          border: 1px solid rgba(149,117,255,0.38);
+          border-radius: 999px;
+          padding: 4px 10px 5px;
+          background: rgba(149,117,255,0.12);
+          color: rgba(214,204,255,0.86);
+          font-family: var(--font-geist-mono), monospace;
+          font-size: 11px;
+          line-height: 1;
+          white-space: nowrap;
+        }
         .ilj-jpgs-profile-action {
-          flex: 0 0 auto;
-          color: rgb(149, 117, 255);
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          color: rgba(174, 148, 255, 0.76);
           font-size: 11px;
           line-height: 1.2;
           text-decoration: none;
-          opacity: 0.9;
+          opacity: 0.82;
           transition: opacity 0.15s ease, color 0.15s ease;
         }
         .ilj-jpgs-profile-action:hover {
-          opacity: 0.72;
+          color: rgba(196, 178, 255, 0.9);
+          opacity: 0.86;
         }
         .ilj-jpgs-profile-links {
-          justify-self: start;
           display: flex;
           flex-wrap: nowrap;
           align-items: center;
+          justify-content: flex-start;
           gap: 5px;
           max-width: 100%;
           min-width: 0;
           overflow: hidden;
-          color: rgba(168,164,157,0.46);
-          font-size: 11px;
+          color: rgba(168,164,157,0.36);
+          font-size: 10px;
           line-height: 1.2;
+          margin-top: auto;
           white-space: nowrap;
         }
         .ilj-jpgs-profile-separator {
           flex: 0 0 auto;
         }
         .ilj-jpgs-collector-card {
-          background: #161616;
+          background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.024)), #141516;
           border: 1px solid rgba(255,255,255,0.07);
           border-radius: 14px;
-          padding: 16px;
-          display: grid;
-          grid-template-columns: 210px minmax(0, 1fr);
-          gap: 16px;
-          align-items: stretch;
+          padding: 18px;
+          display: flex;
+          flex-direction: column;
+          gap: 0;
           min-width: 0;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.035), 0 14px 34px rgba(0,0,0,0.16);
+        }
+        .ilj-jpgs-collector-card:first-child {
+          border-color: rgba(149,117,255,0.24);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.045), 0 0 0 1px rgba(149,117,255,0.055), 0 18px 38px rgba(0,0,0,0.2);
         }
         .ilj-jpgs-collector-card:nth-child(even) {
-          background: #181719;
+          background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.022)), #171719;
+        }
+        .ilj-jpgs-collector-header {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 12px;
+          padding-bottom: 16px;
+          margin-bottom: 14px;
+          border-bottom: 1px solid rgba(255,255,255,0.07);
         }
         .ilj-jpgs-collector-identity {
-          display: grid;
-          grid-template-columns: 56px minmax(0, 1fr);
+          display: flex;
+          flex-direction: row;
+          align-items: center;
           gap: 12px;
-          align-content: start;
-          padding-right: 16px;
-          border-right: 1px solid rgba(255,255,255,0.07);
           min-width: 0;
+          flex: 1;
         }
         .ilj-jpgs-collector-avatar {
-          flex-shrink: 0;
-          width: 56px;
-          height: 56px;
+          width: 44px;
+          height: 44px;
           border-radius: 50%;
-          overflow: hidden;
+          flex-shrink: 0;
+          box-sizing: border-box;
+          border: 1px solid rgba(214,204,255,0.24);
           background: rgba(149,117,255,0.15);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          text-decoration: none;
+          overflow: hidden;
+        }
+        .ilj-jpgs-collector-avatar img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+          border-radius: 50%;
+        }
+        .ilj-jpgs-collector-rank {
+          flex-shrink: 0;
+          border: 1px solid rgba(149,117,255,0.36);
+          border-radius: 7px;
+          padding: 4px 8px;
+          background: rgba(149,117,255,0.18);
+          color: rgba(225,217,255,0.92);
+          font-size: 12px;
+          line-height: 1.2;
+          font-family: var(--font-geist-mono), monospace;
+          font-weight: 600;
+          white-space: nowrap;
         }
         .ilj-jpgs-collector-copy {
           min-width: 0;
           display: grid;
           gap: 5px;
-          align-content: start;
-        }
-        .ilj-jpgs-collector-title-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 8px;
-          min-width: 0;
+          align-content: center;
+          flex: 1;
         }
         .ilj-jpgs-collector-name {
-          font-size: 14px;
-          font-weight: 500;
+          font-size: 15px;
+          font-weight: 650;
+          line-height: 1.25;
           color: rgb(240,237,230);
+          display: -webkit-box;
+          -webkit-line-clamp: 1;
+          -webkit-box-orient: vertical;
           overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
+          overflow-wrap: anywhere;
           text-decoration: none;
           min-width: 0;
         }
-        .ilj-jpgs-collector-rank {
-          flex: 0 0 auto;
-          border: 1px solid rgba(149,117,255,0.22);
-          border-radius: 999px;
-          padding: 2px 6px;
-          background: rgba(149,117,255,0.10);
-          color: rgba(214,204,255,0.82);
-          font-size: 10px;
-          line-height: 1;
-          font-family: var(--font-geist-mono), monospace;
-        }
         .ilj-jpgs-collector-secondary {
-          color: rgba(168,164,157,0.62);
-          font-size: 11px;
+          margin: 0;
+          color: rgba(168,164,157,0.42);
+          font-size: 10px;
+          line-height: 1.35;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
         }
-        .ilj-jpgs-collector-summary {
-          color: rgba(168,164,157,0.74);
-          font-size: 12px;
-          line-height: 1.45;
-          margin-top: 4px;
+        .ilj-jpgs-collector-count-block {
+          flex-shrink: 0;
+          display: flex;
+          flex-direction: column;
+          align-items: flex-end;
+          gap: 3px;
         }
-        .ilj-jpgs-collector-proof {
-          min-width: 0;
-          align-self: center;
+        .ilj-jpgs-collector-count {
+          color: rgb(170,126,255);
+          font-family: var(--font-geist-mono), monospace;
+          font-size: 44px;
+          font-weight: 750;
+          line-height: 0.9;
+          letter-spacing: -1px;
+          text-shadow: 0 0 14px rgba(149,117,255,0.18);
+          font-variant-numeric: tabular-nums;
+        }
+        .ilj-jpgs-collector-count-label {
+          color: rgba(168,164,157,0.62);
+          font-family: var(--font-geist-mono), monospace;
+          font-size: 9px;
+          line-height: 1.2;
+          letter-spacing: 0.14em;
+          text-transform: uppercase;
         }
         @media (max-width: 760px) {
           .ilj-jpgs-collector-card {
-            grid-template-columns: minmax(0, 1fr);
-            gap: 14px;
-            padding: 15px;
+            padding: 14px;
           }
-          .ilj-jpgs-collector-identity {
-            border-right: 0;
-            border-bottom: 1px solid rgba(255,255,255,0.07);
-            padding-right: 0;
-            padding-bottom: 14px;
+          .ilj-jpgs-collector-count {
+            font-size: 36px;
+          }
+        }
+        @media (max-width: 460px) {
+          .ilj-jpgs-collector-card {
+            padding: 12px;
           }
         }
       `}</style>
@@ -504,66 +561,59 @@ function CollectorCard({ wallet, rank }: { wallet: CollectorWallet; rank: number
       : null,
   ].filter((link): link is { label: string; href: string; ariaLabel: string } => Boolean(link));
   const initials = label.replace(/^0x/i, "").slice(0, 2).toUpperCase();
-  const summary = jpgsCollectorSummary(wallet);
-  const sharedCollections = sharedCollectionItems(wallet.matchedCollections);
+  const sharedCollections = sharedCollectionItems(wallet.matchedCollections, wallet.address);
+  const orderedSharedCollections = orderedSharedCollectionItems(sharedCollections);
 
   return (
     <article className="ilj-jpgs-collector-card">
-      <div className="ilj-jpgs-collector-identity">
-        <div className="ilj-jpgs-collector-avatar" aria-hidden="true">
-          {avatarSrc ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={avatarSrc}
-              alt=""
-              onError={() => setAvatarFailed(true)}
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            />
-          ) : (
-            <span style={{ fontSize: 14, color: "rgb(149,117,255)", fontWeight: 500 }}>{initials}</span>
-          )}
-        </div>
-
-        <div className="ilj-jpgs-collector-copy">
-          <div className="ilj-jpgs-collector-title-row">
-            <span className="ilj-jpgs-collector-name">
-              {label}
-            </span>
-            <span className="ilj-jpgs-collector-rank">#{rank}</span>
+      <div className="ilj-jpgs-collector-header">
+        <div className="ilj-jpgs-collector-identity">
+          <span className="ilj-jpgs-collector-rank">#{rank}</span>
+          <div className="ilj-jpgs-collector-avatar" aria-hidden="true">
+            {avatarSrc ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={avatarSrc}
+                alt=""
+                onError={() => setAvatarFailed(true)}
+                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+              />
+            ) : (
+              <span style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "50%", overflow: "hidden", fontSize: 16, color: "rgb(149,117,255)", fontWeight: 500 }}>{initials}</span>
+            )}
           </div>
-
-          {secondaryIdentity && (
-            <p className="ilj-jpgs-collector-secondary">{secondaryIdentity}</p>
-          )}
-
-          <p className="ilj-jpgs-collector-summary">{summary}</p>
-          {profileLinks.length > 0 ? (
-            <div className="ilj-jpgs-profile-links">
-              {profileLinks.map((link, index) => (
-                <Fragment key={link.label}>
-                  {index > 0 ? <span className="ilj-jpgs-profile-separator" aria-hidden="true">·</span> : null}
-                  <a
-                    href={link.href}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    className="ilj-jpgs-profile-action"
-                    aria-label={link.ariaLabel}
-                  >
-                    {link.label}
-                  </a>
-                </Fragment>
-              ))}
-            </div>
-          ) : null}
+          <div className="ilj-jpgs-collector-copy">
+            <span className="ilj-jpgs-collector-name">{label}</span>
+            {secondaryIdentity && (
+              <p className="ilj-jpgs-collector-secondary">{secondaryIdentity}</p>
+            )}
+            {profileLinks.length > 0 ? (
+              <div className="ilj-jpgs-profile-links">
+                {profileLinks.map((link, index) => (
+                  <Fragment key={link.label}>
+                    {index > 0 ? <span className="ilj-jpgs-profile-separator" aria-hidden="true">·</span> : null}
+                    <a
+                      href={link.href}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="ilj-jpgs-profile-action"
+                      aria-label={link.ariaLabel}
+                    >
+                      {link.label}
+                      {link.label === "OpenSea" ? <span aria-hidden="true">↗</span> : null}
+                    </a>
+                  </Fragment>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </div>
+        <div className="ilj-jpgs-collector-count-block">
+          <span className="ilj-jpgs-collector-count">{wallet.matchedCollectionCount}</span>
+          <span className="ilj-jpgs-collector-count-label">SHARED</span>
         </div>
       </div>
-
-      <div className="ilj-jpgs-collector-proof">
-        <SharedCollectionsStrip
-          label="COLLECTION OVERLAP"
-          collections={sharedCollections}
-        />
-      </div>
+      <CollectionScrollRow collections={orderedSharedCollections} collectorAddress={wallet.address} />
     </article>
   );
 }
