@@ -441,8 +441,8 @@ function ResultsInner() {
           flex: 1;
         }
         .ilj-jpgs-collector-avatar {
-          width: 44px;
-          height: 44px;
+          width: 60px;
+          height: 60px;
           border-radius: 50%;
           flex-shrink: 0;
           box-sizing: border-box;
@@ -521,8 +521,9 @@ function ResultsInner() {
           font-family: var(--font-geist-mono), monospace;
           font-size: 9px;
           line-height: 1.2;
-          letter-spacing: 0.14em;
+          letter-spacing: 0.08em;
           text-transform: uppercase;
+          white-space: nowrap;
         }
         @media (max-width: 760px) {
           .ilj-jpgs-collector-card {
@@ -531,10 +532,18 @@ function ResultsInner() {
           .ilj-jpgs-collector-count {
             font-size: 36px;
           }
+          .ilj-jpgs-collector-avatar {
+            width: 52px;
+            height: 52px;
+          }
         }
         @media (max-width: 460px) {
           .ilj-jpgs-collector-card {
             padding: 12px;
+          }
+          .ilj-jpgs-collector-avatar {
+            width: 46px;
+            height: 46px;
           }
         }
       `}</style>
@@ -585,7 +594,7 @@ function CollectorCard({ wallet, rank }: { wallet: CollectorWallet; rank: number
                 style={{ width: "100%", height: "100%", objectFit: "cover" }}
               />
             ) : (
-              <span style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "50%", overflow: "hidden", fontSize: 16, color: "rgb(149,117,255)", fontWeight: 500 }}>{initials}</span>
+              <span style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "50%", overflow: "hidden", fontSize: 20, color: "rgb(149,117,255)", fontWeight: 500 }}>{initials}</span>
             )}
           </div>
           <div className="ilj-jpgs-collector-copy">
@@ -616,7 +625,7 @@ function CollectorCard({ wallet, rank }: { wallet: CollectorWallet; rank: number
         </div>
         <div className="ilj-jpgs-collector-count-block">
           <span className="ilj-jpgs-collector-count">{wallet.matchedCollectionCount}</span>
-          <span className="ilj-jpgs-collector-count-label">SHARED</span>
+          <span className="ilj-jpgs-collector-count-label">SHARED COLLECTIONS</span>
         </div>
       </div>
       <CollectionScrollRow collections={orderedSharedCollections} collectorAddress={wallet.address} />

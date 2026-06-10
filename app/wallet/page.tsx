@@ -887,8 +887,8 @@ export default function WalletReadPage() {
                       flex: 1;
                     }
                     .ilj-wallet-similar-avatar-wrap {
-                      width: 44px;
-                      height: 44px;
+                      width: 60px;
+                      height: 60px;
                       border-radius: 50%;
                       flex-shrink: 0;
                       box-sizing: border-box;
@@ -945,8 +945,9 @@ export default function WalletReadPage() {
                       font-family: var(--font-geist-mono), monospace;
                       font-size: 9px;
                       line-height: 1.2;
-                      letter-spacing: 0.14em;
+                      letter-spacing: 0.08em;
                       text-transform: uppercase;
+                      white-space: nowrap;
                     }
                     @media (max-width: 760px) {
                       .ilj-wallet-similar-card {
@@ -955,10 +956,18 @@ export default function WalletReadPage() {
                       .ilj-wallet-similar-count {
                         font-size: 36px;
                       }
+                      .ilj-wallet-similar-avatar-wrap {
+                        width: 52px;
+                        height: 52px;
+                      }
                     }
                     @media (max-width: 460px) {
                       .ilj-wallet-similar-card {
                         padding: 12px;
+                      }
+                      .ilj-wallet-similar-avatar-wrap {
+                        width: 46px;
+                        height: 46px;
                       }
                     }
                     .ilj-wallet-similar-loading {
@@ -1767,7 +1776,7 @@ function SimilarCollectorCard({ collector, rank }: { collector: SimilarCollector
                 style={{ width: "100%", height: "100%", objectFit: "cover" }}
               />
             ) : (
-              <span style={similarCollectorAvatarFallbackStyle} aria-hidden="true">
+              <span style={{ ...similarCollectorAvatarFallbackStyle, fontSize: 20 }} aria-hidden="true">
                 {initials}
               </span>
             )}
@@ -1800,7 +1809,7 @@ function SimilarCollectorCard({ collector, rank }: { collector: SimilarCollector
         </div>
         <div className="ilj-wallet-similar-count-block">
           <span className="ilj-wallet-similar-count">{collector.sharedCollectionCount}</span>
-          <span className="ilj-wallet-similar-count-label">SHARED</span>
+          <span className="ilj-wallet-similar-count-label">SHARED COLLECTIONS</span>
         </div>
       </div>
       <CollectionScrollRow collections={orderedSharedCollections} collectorAddress={collector.address} />

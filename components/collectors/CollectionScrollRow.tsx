@@ -591,6 +591,16 @@ export function CollectionScrollRow({
           padding: 2px 0;
         }
 
+        .ilj-csr__nft-tile--link {
+          text-decoration: none;
+          cursor: pointer;
+          transition: opacity 0.13s ease;
+        }
+
+        .ilj-csr__nft-tile--link:hover {
+          opacity: 0.78;
+        }
+
         @media (max-width: 760px) {
           .ilj-csr__thumb {
             flex: 0 0 82px;
@@ -707,22 +717,39 @@ function NftTile({ nft }: { nft: NftPreview }) {
   const [imgFailed, setImgFailed] = useState(false);
   const label = nft.name ?? (nft.tokenId ? `#${nft.tokenId}` : null);
 
+  const inner = nft.imageUrl && !imgFailed ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={nft.imageUrl}
+      alt={label ?? ""}
+      loading="lazy"
+      onError={() => setImgFailed(true)}
+      className="ilj-csr__nft-image"
+    />
+  ) : (
+    <span className="ilj-csr__nft-fallback" aria-hidden="true">
+      {label ? label.slice(0, 3) : "—"}
+    </span>
+  );
+
+  if (nft.openseaUrl) {
+    return (
+      <a
+        href={nft.openseaUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="ilj-csr__nft-tile ilj-csr__nft-tile--link"
+        title={label ?? undefined}
+        aria-label={label ? `View ${label} on OpenSea` : "View on OpenSea"}
+      >
+        {inner}
+      </a>
+    );
+  }
+
   return (
     <div className="ilj-csr__nft-tile" title={label ?? undefined}>
-      {nft.imageUrl && !imgFailed ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={nft.imageUrl}
-          alt={label ?? ""}
-          loading="lazy"
-          onError={() => setImgFailed(true)}
-          className="ilj-csr__nft-image"
-        />
-      ) : (
-        <span className="ilj-csr__nft-fallback" aria-hidden="true">
-          {label ? label.slice(0, 3) : "—"}
-        </span>
-      )}
+      {inner}
     </div>
   );
 }
