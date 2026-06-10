@@ -35,6 +35,7 @@ type OsAccountNft = {
   image_url?: string;
   display_image_url?: string;
   opensea_url?: string;
+  contract?: string;
 };
 
 type OsAccountNftsResponse = {
@@ -59,6 +60,32 @@ type AlchemyNftsResponse = {
   ownedNfts?: AlchemyNftItem[];
   pageKey?: string;
 };
+
+function openseaAssetUrl(
+  chain: string | undefined,
+  contract: string | undefined,
+  tokenId: string | undefined,
+): string | undefined {
+  if (!contract || !tokenId) return undefined;
+  const normalizedChain = (chain || "ethereum").toLowerCase();
+  const openseaChain =
+    normalizedChain === "polygon" ? "matic" :
+    normalizedChain === "mainnet" ? "ethereum" :
+    normalizedChain;
+  return `https://opensea.io/assets/${openseaChain}/${contract}/${tokenId}`;
+}
+
+function normalizeTokenId(tokenId: string | undefined): string | undefined {
+  if (!tokenId) return undefined;
+  if (tokenId.startsWith("0x") || tokenId.startsWith("0X")) {
+    try {
+      return BigInt(tokenId).toString(10);
+    } catch {
+      return tokenId;
+    }
+  }
+  return tokenId;
+}
 
 // Parse contracts from repeated "contracts" param entries (each: "0xADDR:chain" or "0xADDR")
 // and from fallback single "contract"+"chain" params.
@@ -130,8 +157,8 @@ async function fetchNftsViaAlchemy(
   if (!key) return null;
 
   const usable = contracts
-    .map((c) => ({ address: c.address, network: alchemyNetworkForChain(c.chain) }))
-    .filter((c): c is { address: string; network: NonNullable<ReturnType<typeof alchemyNetworkForChain>> } =>
+    .map((c) => ({ address: c.address, chain: c.chain, network: alchemyNetworkForChain(c.chain) }))
+    .filter((c): c is { address: string; chain: string; network: NonNullable<ReturnType<typeof alchemyNetworkForChain>> } =>
       c.network !== null,
     );
 
@@ -141,7 +168,7 @@ async function fetchNftsViaAlchemy(
   const nfts: NftPreview[] = [];
   let partial = false;
 
-  for (const { address: contractAddress, network } of usable) {
+  for (const { address: contractAddress, chain, network } of usable) {
     if (nfts.length >= MAX_PREVIEWS) { partial = true; break; }
 
     let pageKey: string | undefined;
@@ -150,7 +177,8 @@ async function fetchNftsViaAlchemy(
         const data = await fetchAlchemyNftsForOwner(owner, contractAddress, network, key, pageKey);
         for (const item of data.ownedNfts ?? []) {
           if (nfts.length >= MAX_PREVIEWS) { partial = true; break; }
-          const tokenId = item.tokenId ?? "";
+          const rawTokenId = item.tokenId ?? "";
+          const tokenId = normalizeTokenId(rawTokenId) ?? rawTokenId;
           const dedupeKey = `${contractAddress}:${tokenId}`;
           if (seen.has(dedupeKey)) continue;
           seen.add(dedupeKey);
@@ -164,7 +192,7 @@ async function fetchNftsViaAlchemy(
             tokenId,
             name: item.name ?? item.raw?.metadata?.name ?? null,
             imageUrl,
-            openseaUrl: null,
+            openseaUrl: openseaAssetUrl(chain, contractAddress, tokenId) ?? null,
           });
         }
         pageKey = nfts.length < MAX_PREVIEWS ? data.pageKey : undefined;
@@ -217,11 +245,13 @@ async function fetchNftsViaOpensea(
 
         for (const nft of data.nfts ?? []) {
           if (nfts.length >= MAX_PREVIEWS) { partial = true; break; }
+          const tokenId = nft.identifier ?? "";
+          const builtUrl = openseaAssetUrl(chain, nft.contract, tokenId);
           nfts.push({
-            tokenId: nft.identifier ?? "",
+            tokenId,
             name: nft.name ?? null,
             imageUrl: nft.display_image_url ?? nft.image_url ?? null,
-            openseaUrl: nft.opensea_url ?? null,
+            openseaUrl: nft.opensea_url ?? builtUrl ?? null,
           });
         }
 
